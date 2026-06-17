@@ -5,6 +5,10 @@
  */
 
 import assert from 'node:assert';
+import {existsSync} from 'node:fs';
+import {readFile, rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {describe, it} from 'node:test';
 
 import {
@@ -270,6 +274,113 @@ describe('styles', () => {
         const display = parsed.styleChanges.find(p => p.property === 'display');
         assert.strictEqual(display?.before, 'block');
         assert.strictEqual(display?.after, 'inline');
+      });
+    });
+
+    it('writes snapshot JSON to filePath', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(
+          html`<div
+            id="box"
+            style="display:block"
+            >box</div
+          >`,
+        );
+        await context.createTextSnapshot(context.getSelectedMcpPage());
+
+        const filePath = join(tmpdir(), 'styles-snapshot-test.json');
+        try {
+          await saveComputedStylesSnapshot.handler(
+            {
+              params: {
+                filePath,
+                uids: ['1_1'],
+                properties: ['display'],
+              },
+              page: context.getSelectedMcpPage(),
+            },
+            response,
+            context,
+          );
+
+          assert.ok(existsSync(filePath));
+          const saved = JSON.parse(await readFile(filePath, 'utf8')) as {
+            schemaVersion: number;
+            elements: Record<string, {computed: {display: string}}>;
+          };
+          assert.strictEqual(saved.schemaVersion, 1);
+          assert.strictEqual(saved.elements['1_1'].computed.display, 'block');
+        } finally {
+          await rm(filePath, {force: true});
+        }
+      });
+    });
+
+    it('diffs live styles against baselineFilePath', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+        await page.setContent(
+          html`<div
+            id="box"
+            style="display:block"
+            >box</div
+          >`,
+        );
+        await context.createTextSnapshot(context.getSelectedMcpPage());
+
+        const filePath = join(tmpdir(), 'styles-baseline-test.json');
+        try {
+          await saveComputedStylesSnapshot.handler(
+            {
+              params: {
+                filePath,
+                uids: ['1_1'],
+                properties: ['display'],
+              },
+              page: context.getSelectedMcpPage(),
+            },
+            response,
+            context,
+          );
+
+          await page.evaluate(() => {
+            const el = document.getElementById('box');
+            if (el) {
+              el.style.display = 'inline';
+            }
+          });
+
+          response.resetResponseLineForTesting();
+          await diffComputedStylesSnapshot.handler(
+            {
+              params: {
+                baselineFilePath: filePath,
+                uid: '1_1',
+                properties: ['display'],
+              },
+              page: context.getSelectedMcpPage(),
+            },
+            response,
+            context,
+          );
+
+          const json = response.responseLines.at(2)!;
+          const parsed = JSON.parse(json) as {
+            styleChanges: Array<{
+              property: string;
+              before: string;
+              after: string;
+            }>;
+          };
+          const display = parsed.styleChanges.find(
+            entry => entry.property === 'display',
+          );
+          assert.strictEqual(display?.before, 'block');
+          assert.strictEqual(display?.after, 'inline');
+        } finally {
+          await rm(filePath, {force: true});
+        }
       });
     });
   });
