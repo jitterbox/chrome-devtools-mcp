@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 import {zod as z} from '../third_party/index.js';
 import type {ElementHandle} from '../third_party/index.js';
 
 import {ToolCategory} from './categories.js';
-import {definePageTool} from './ToolDefinition.js';
+import {definePageTool, type Context} from './ToolDefinition.js';
 // Intentionally no direct imports to avoid unused types and keep payload small.
 
 type CssPropertyMap = Record<string, string>;
@@ -46,6 +49,174 @@ interface StyleSnapshotData {
 type LegacySnapshotMap = Record<string, CssPropertyMap>;
 
 const GEOMETRY_EPS_PX = 0.5;
+
+interface StyleSnapshotFile {
+  schemaVersion: number;
+  name?: string;
+  meta: StyleSnapshotMeta;
+  elements: Record<string, StyleSnapshotElement>;
+}
+
+const filePathSchema = z
+  .string()
+  .optional()
+  .describe(
+    'Absolute or cwd-relative path to read/write a JSON styles snapshot file.',
+  );
+
+function isCssPropertyMap(value: unknown): value is CssPropertyMap {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return Object.values(value).every(entry => typeof entry === 'string');
+}
+
+function isStyleSnapshotMeta(value: unknown): value is StyleSnapshotMeta {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value;
+  return (
+    'capturedAt' in record &&
+    typeof record.capturedAt === 'string' &&
+    'url' in record &&
+    typeof record.url === 'string' &&
+    'viewportWidth' in record &&
+    typeof record.viewportWidth === 'number' &&
+    'viewportHeight' in record &&
+    typeof record.viewportHeight === 'number' &&
+    'dpr' in record &&
+    typeof record.dpr === 'number'
+  );
+}
+
+function isStyleSnapshotElement(value: unknown): value is StyleSnapshotElement {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value;
+  if (!('computed' in record) || !isCssPropertyMap(record.computed)) {
+    return false;
+  }
+  return true;
+}
+
+function isStyleSnapshotElements(
+  value: unknown,
+): value is Record<string, StyleSnapshotElement> {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return Object.values(value).every(entry => isStyleSnapshotElement(entry));
+}
+
+function isStyleSnapshotFile(value: unknown): value is StyleSnapshotFile {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value;
+  return (
+    'schemaVersion' in record &&
+    typeof record.schemaVersion === 'number' &&
+    'meta' in record &&
+    isStyleSnapshotMeta(record.meta) &&
+    'elements' in record &&
+    isStyleSnapshotElements(record.elements)
+  );
+}
+
+function isLegacySnapshotMap(value: unknown): value is LegacySnapshotMap {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  return Object.values(value).every(entry => isCssPropertyMap(entry));
+}
+
+function isV1SnapshotData(value: unknown): value is StyleSnapshotData {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value;
+  return (
+    'meta' in record &&
+    isStyleSnapshotMeta(record.meta) &&
+    'elements' in record &&
+    isStyleSnapshotElements(record.elements)
+  );
+}
+
+function parseStyleSnapshotJson(
+  text: string,
+): StyleSnapshotData | LegacySnapshotMap {
+  const parsed: unknown = JSON.parse(text);
+  if (isStyleSnapshotFile(parsed)) {
+    return {meta: parsed.meta, elements: parsed.elements};
+  }
+  if (isV1SnapshotData(parsed)) {
+    return parsed;
+  }
+  if (isLegacySnapshotMap(parsed)) {
+    return parsed;
+  }
+  throw new Error('Invalid styles snapshot file format');
+}
+
+async function writeStyleSnapshotFile(
+  context: Context,
+  filePath: string,
+  name: string | undefined,
+  data: StyleSnapshotData,
+): Promise<string> {
+  const payload: StyleSnapshotFile = {
+    schemaVersion: 1,
+    name,
+    meta: data.meta,
+    elements: data.elements,
+  };
+  const encoded = new TextEncoder().encode(
+    `${JSON.stringify(payload, null, 2)}\n`,
+  );
+  const saved = await context.saveFile(encoded, filePath);
+  return saved.filename;
+}
+
+async function readStyleSnapshotFile(
+  filePath: string,
+): Promise<StyleSnapshotData | LegacySnapshotMap> {
+  const text = await fs.readFile(path.resolve(filePath), 'utf8');
+  return parseStyleSnapshotJson(text);
+}
+
+async function resolveBaselineSnapshot(
+  context: Context,
+  name: string | undefined,
+  baselineFilePath: string | undefined,
+): Promise<StyleSnapshotData | LegacySnapshotMap> {
+  if (baselineFilePath) {
+    return readStyleSnapshotFile(baselineFilePath);
+  }
+  if (!name) {
+    throw new Error('Provide either name or baselineFilePath');
+  }
+  const snapshots = getSnapshots(context as unknown as object);
+  const snapshot = snapshots.get(name);
+  if (!snapshot) {
+    throw new Error('No snapshot found with the provided name');
+  }
+  return snapshot;
+}
+
+function assertSaveTarget(name?: string, filePath?: string): void {
+  if (!name && !filePath) {
+    throw new Error('Provide at least one of name or filePath');
+  }
+}
+
+function assertDiffBaseline(name?: string, baselineFilePath?: string): void {
+  if (!name && !baselineFilePath) {
+    throw new Error('Provide at least one of name or baselineFilePath');
+  }
+}
 
 // Per-context named snapshots (v1 or legacy flat map).
 const snapshotsStore = new WeakMap<
@@ -856,22 +1027,25 @@ export const diffComputedStyles = definePageTool({
 export const saveComputedStylesSnapshot = definePageTool({
   name: 'save_computed_styles_snapshot',
   description:
-    'Store baseline computed styles + domPath/meta under a name for ' +
-    'cross-navigation regression checks.',
+    'Store baseline computed styles + domPath/meta under a name and/or ' +
+    'write schema v1 JSON to filePath for cross-run regression checks.',
   annotations: {
     category: ToolCategory.DEBUGGING,
-    readOnlyHint: true,
+    readOnlyHint: false,
   },
   schema: {
-    name: z.string().describe('Snapshot name'),
+    name: z.string().optional().describe('In-memory snapshot name'),
     uids: z
       .array(z.string())
       .describe(
         'The uids of elements on the page from the page content snapshot',
       ),
     properties: z.array(z.string()).optional().describe('Optional filter list'),
+    filePath: filePathSchema,
   },
   handler: async (request, response, context) => {
+    assertSaveTarget(request.params.name, request.params.filePath);
+
     const pptr = request.page.pptrPage;
     await context.ensureDomDomainEnabledForPage(pptr);
     await context.ensureCssDomainEnabledForPage(pptr);
@@ -930,13 +1104,29 @@ export const saveComputedStylesSnapshot = definePageTool({
     );
 
     const data: StyleSnapshotData = {meta, elements};
-    const snapshots = getSnapshots(context as unknown as object);
-    snapshots.set(request.params.name, data);
+    if (request.params.name) {
+      const snapshots = getSnapshots(context as unknown as object);
+      snapshots.set(request.params.name, data);
+    }
 
+    let savedFilePath: string | undefined;
+    if (request.params.filePath) {
+      savedFilePath = await writeStyleSnapshotFile(
+        context,
+        request.params.filePath,
+        request.params.name,
+        data,
+      );
+    }
+
+    const label = request.params.name ?? savedFilePath ?? 'snapshot';
     response.appendResponseLine(
-      `Saved styles snapshot "${request.params.name}" for ` +
+      `Saved styles snapshot "${label}" for ` +
         `${Object.keys(elements).length} elements (schema v1).`,
     );
+    if (savedFilePath) {
+      response.appendResponseLine(`Snapshot file: ${savedFilePath}`);
+    }
     response.appendResponseLine('```json');
     response.appendResponseLine(
       JSON.stringify({
@@ -944,6 +1134,7 @@ export const saveComputedStylesSnapshot = definePageTool({
         schemaVersion: 1,
         meta,
         uids: Object.keys(elements),
+        filePath: savedFilePath,
       }),
     );
     response.appendResponseLine('```');
@@ -953,14 +1144,17 @@ export const saveComputedStylesSnapshot = definePageTool({
 export const diffComputedStylesSnapshot = definePageTool({
   name: 'diff_computed_styles_snapshot',
   description:
-    'Compare live uid to save_computed_styles_snapshot baseline; domPath ' +
-    'when uids differ between loads.',
+    'Compare live uid to an in-memory snapshot (name) or JSON baseline ' +
+    '(baselineFilePath); domPath when uids differ between loads.',
   annotations: {
     category: ToolCategory.DEBUGGING,
     readOnlyHint: true,
   },
   schema: {
-    name: z.string().describe('Snapshot name'),
+    name: z.string().optional().describe('In-memory snapshot name'),
+    baselineFilePath: filePathSchema.describe(
+      'JSON baseline from save_computed_styles_snapshot filePath.',
+    ),
     uid: z
       .string()
       .describe('Element uid for the live node (from current snapshot)'),
@@ -977,11 +1171,13 @@ export const diffComputedStylesSnapshot = definePageTool({
       .describe('Compare border-box rects to detect effective layout change.'),
   },
   handler: async (request, response, context) => {
-    const snapshots = getSnapshots(context as unknown as object);
-    const snapshot = snapshots.get(request.params.name);
-    if (!snapshot) {
-      throw new Error('No snapshot found with the provided name');
-    }
+    assertDiffBaseline(request.params.name, request.params.baselineFilePath);
+
+    const snapshot = await resolveBaselineSnapshot(
+      context,
+      request.params.name,
+      request.params.baselineFilePath,
+    );
     const elems = snapshotElements(snapshot);
     const baseline = resolveSnapshotElement(
       elems,
@@ -1044,6 +1240,8 @@ export const diffComputedStylesSnapshot = definePageTool({
 
       const classification = classifyStyleDiff(changed, geometryEqual);
       const meta = snapshotMeta(snapshot);
+      const baselineLabel =
+        request.params.baselineFilePath ?? request.params.name ?? 'snapshot';
       const out: Record<string, unknown> = {
         snapshotMeta: meta,
         domPathBaseline: baseline.domPath,
@@ -1059,7 +1257,7 @@ export const diffComputedStylesSnapshot = definePageTool({
         };
       }
       response.appendResponseLine(
-        `Computed styles diff vs snapshot "${request.params.name}" ` +
+        `Computed styles diff vs snapshot "${baselineLabel}" ` +
           `(snapshot -> current):`,
       );
       response.appendResponseLine('```json');
