@@ -19,23 +19,10 @@ const ROOT_DIR = path.resolve(import.meta.dirname, '..');
 const SCENARIOS_DIR = path.join(import.meta.dirname, 'eval_scenarios');
 const SKILL_PATH = path.join(ROOT_DIR, 'skills', 'chrome-devtools', 'SKILL.md');
 
-// Define schema for our test scenarios
-export interface CapturedFunctionCall {
-  name: string;
-  args: Record<string, unknown>;
-}
-
-export interface TestScenario {
-  prompt: string;
-  maxTurns: number;
-  expectations: (calls: CapturedFunctionCall[]) => void;
-  htmlRoute?: {
-    path: string;
-    htmlContent: string;
-  };
-  /** Extra CLI flags passed to the MCP server (e.g. '--experimental-page-id-routing'). */
-  serverArgs?: string[];
-}
+import type {CapturedFunctionCall, TestScenario} from './eval_result.ts';
+import {Result} from './eval_result.ts';
+export type {CapturedFunctionCall, TestScenario};
+export {Result};
 
 async function loadScenario(scenarioPath: string): Promise<TestScenario> {
   const module = await import(pathToFileURL(scenarioPath).href);
@@ -54,6 +41,7 @@ async function runSingleScenario(
   modelId: string,
   debug: boolean,
   includeSkill: boolean,
+  extraServerArgs: string[] = [],
 ): Promise<void> {
   const debugLog = (...args: unknown[]) => {
     if (debug) {
@@ -99,7 +87,10 @@ async function runSingleScenario(
     }
 
     // Path to the compiled MCP server
-    const serverPath = path.join(ROOT_DIR, 'build/src/index.js');
+    const serverPath = path.join(
+      ROOT_DIR,
+      'build/src/bin/chrome-devtools-mcp.js',
+    );
     if (!fs.existsSync(serverPath)) {
       throw new Error(
         `MCP server not found at ${serverPath}. Please run 'npm run build' first.`,
@@ -121,6 +112,9 @@ async function runSingleScenario(
     }
     if (scenario.serverArgs) {
       args.push(...scenario.serverArgs);
+    }
+    if (extraServerArgs.length > 0) {
+      args.push(...extraServerArgs);
     }
 
     transport = new StdioClientTransport({
@@ -172,7 +166,7 @@ async function runSingleScenario(
     debugLog(`\n--- Response ---\n${result.text}`);
 
     debugLog('\nVerifying expectations...');
-    scenario.expectations(allCalls);
+    scenario.expectations(new Result(allCalls, args));
   } finally {
     try {
       await client?.close();
@@ -192,7 +186,7 @@ async function main() {
     options: {
       model: {
         type: 'string',
-        default: 'gemini-2.5-flash',
+        default: 'gemini-3-flash-preview',
       },
       debug: {
         type: 'boolean',
@@ -206,6 +200,9 @@ async function main() {
         type: 'boolean',
         default: false,
       },
+      'server-args': {
+        type: 'string',
+      },
     },
     allowPositionals: true,
   });
@@ -214,6 +211,9 @@ async function main() {
   const debug = values.debug;
   const repeat = values.repeat;
   const includeSkill = values['include-skill'];
+  const extraServerArgs = values['server-args']
+    ? values['server-args'].split(/\s+/)
+    : [];
 
   const scenarioFiles =
     positionals.length > 0
@@ -245,6 +245,7 @@ async function main() {
             modelId,
             debug,
             includeSkill,
+            extraServerArgs,
           );
           console.log(`✔ ${path.relative(ROOT_DIR, scenarioPath)} (Run ${i})`);
           successCount++;

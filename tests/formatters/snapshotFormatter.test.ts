@@ -10,7 +10,8 @@ import {describe, it} from 'node:test';
 import type {ElementHandle} from 'puppeteer-core';
 
 import {SnapshotFormatter} from '../../src/formatters/SnapshotFormatter.js';
-import type {TextSnapshot, TextSnapshotNode} from '../../src/types.js';
+import type {TextSnapshot} from '../../src/TextSnapshot.js';
+import type {TextSnapshotNode} from '../../src/types.js';
 
 describe('snapshotFormatter', () => {
   it('formats a snapshot with value properties', () => {
@@ -190,7 +191,7 @@ describe('snapshotFormatter', () => {
     });
     const formatted = formatter.toString();
 
-    t.assert.snapshot?.(formatted);
+    t.assert.snapshot(formatted);
   });
 
   it('does not include a note if the snapshot is already verbose', t => {
@@ -224,7 +225,7 @@ describe('snapshotFormatter', () => {
     });
     const formatted = formatter.toString();
 
-    t.assert.snapshot?.(formatted);
+    t.assert.snapshot(formatted);
   });
 
   it('formats with DevTools data included into a snapshot', t => {
@@ -259,7 +260,7 @@ describe('snapshotFormatter', () => {
     });
     const formatted = formatter.toString();
 
-    t.assert.snapshot?.(formatted);
+    t.assert.snapshot(formatted);
   });
 
   it('toJSON returns expected structure', () => {

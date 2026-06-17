@@ -9,10 +9,16 @@ import path from 'node:path';
 import {describe, it} from 'node:test';
 
 import type {ParsedArguments} from '../../src/bin/chrome-devtools-mcp-cli-options.js';
+import {TextSnapshot} from '../../src/TextSnapshot.js';
 import {installExtension} from '../../src/tools/extensions.js';
 import {evaluateScript} from '../../src/tools/script.js';
 import {serverHooks} from '../server.js';
-import {extractExtensionId, html, withMcpContext} from '../utils.js';
+import {
+  assertNoServiceWorkerReported,
+  extractExtensionId,
+  html,
+  withMcpContext,
+} from '../utils.js';
 
 const EXTENSION_PATH = path.join(
   import.meta.dirname,
@@ -98,6 +104,75 @@ describe('script', () => {
       });
     });
 
+    it('work for scripts that trigger dialogs', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+
+        await page.setContent(html`<button id="test">test</button>`);
+
+        await evaluateScript().handler(
+          {
+            params: {
+              function: String(() => {
+                alert('hello');
+                return 'Works';
+              }),
+            },
+          },
+          response,
+          context,
+        );
+        const lineEvaluation = response.responseLines.at(2)!;
+        assert.strictEqual(JSON.parse(lineEvaluation), 'Works');
+      });
+    });
+
+    it('work for scripts that trigger dialogs and dismiss them', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+
+        await page.setContent(html`<button id="test">test</button>`);
+
+        await evaluateScript().handler(
+          {
+            params: {
+              function: String(() => {
+                return confirm('hello');
+              }),
+              dialogAction: 'dismiss',
+            },
+          },
+          response,
+          context,
+        );
+        const lineEvaluation = response.responseLines.at(2)!;
+        assert.strictEqual(JSON.parse(lineEvaluation), false);
+      });
+    });
+
+    it('work for scripts that trigger prompts and fill them', async () => {
+      await withMcpContext(async (response, context) => {
+        const page = context.getSelectedPptrPage();
+
+        await page.setContent(html`<button id="test">test</button>`);
+
+        await evaluateScript().handler(
+          {
+            params: {
+              function: String(() => {
+                return prompt('Enter your name:');
+              }),
+              dialogAction: 'John Doe',
+            },
+          },
+          response,
+          context,
+        );
+        const lineEvaluation = response.responseLines.at(2)!;
+        assert.strictEqual(JSON.parse(lineEvaluation), 'John Doe');
+      });
+    });
+
     it('work for async functions', async () => {
       await withMcpContext(async (response, context) => {
         const page = context.getSelectedPptrPage();
@@ -127,7 +202,9 @@ describe('script', () => {
 
         await page.setContent(html`<button id="test">test</button>`);
 
-        await context.createTextSnapshot(context.getSelectedMcpPage());
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
 
         await evaluateScript().handler(
           {
@@ -152,7 +229,9 @@ describe('script', () => {
 
         await page.setContent(html`<button id="test">test</button>`);
 
-        await context.createTextSnapshot(context.getSelectedMcpPage());
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
 
         await evaluateScript().handler(
           {
@@ -181,7 +260,9 @@ describe('script', () => {
       await withMcpContext(async (response, context) => {
         const page = context.getSelectedPptrPage();
         await page.goto(server.getRoute('/main'));
-        await context.createTextSnapshot(context.getSelectedMcpPage());
+        context.getSelectedMcpPage().textSnapshot = await TextSnapshot.create(
+          context.getSelectedMcpPage(),
+        );
         await evaluateScript().handler(
           {
             params: {
@@ -197,6 +278,35 @@ describe('script', () => {
         const lineEvaluation = response.responseLines.at(2)!;
         assert.strictEqual(JSON.parse(lineEvaluation), 'I am iframe button');
       });
+    });
+    it('saves output to file when filePath is provided', async () => {
+      const {rm, readFile} = await import('node:fs/promises');
+      const {tmpdir} = await import('node:os');
+      const {join} = await import('node:path');
+      const filePath = join(tmpdir(), 'test-evaluate-script-output.json');
+      try {
+        await withMcpContext(async (response, context) => {
+          await evaluateScript().handler(
+            {
+              params: {
+                function: String(() => ({hello: 'world'})),
+                filePath,
+              },
+            },
+            response,
+            context,
+          );
+          assert.strictEqual(response.responseLines.length, 1);
+          assert.ok(
+            response.responseLines[0]?.includes('Output saved to'),
+            `Expected "Output saved to" but got: ${response.responseLines[0]}`,
+          );
+        });
+        const content = await readFile(filePath, 'utf-8');
+        assert.deepStrictEqual(JSON.parse(content), {hello: 'world'});
+      } finally {
+        await rm(filePath, {force: true});
+      }
     });
     it('evaluates inside extension service worker', async () => {
       await withMcpContext(
@@ -222,6 +332,8 @@ describe('script', () => {
 
           const swId = context.getExtensionServiceWorkerId(sw);
 
+          await context.triggerExtensionAction(extensionId);
+
           response.resetResponseLineForTesting();
           await evaluateScript({
             categoryExtensions: true,
@@ -240,6 +352,9 @@ describe('script', () => {
 
           const lineEvaluation = response.responseLines.at(2)!;
           assert.strictEqual(JSON.parse(lineEvaluation), 'has-chrome');
+          await context.uninstallExtension(extensionId);
+          const targets = context.browser.targets();
+          assertNoServiceWorkerReported(targets, extensionId);
         },
         {},
         {categoryExtensions: true} as ParsedArguments,

@@ -12,7 +12,7 @@ export const cliOptions = {
     type: 'boolean',
     description:
       'If specified, automatically connects to a browser (Chrome 144+) running locally from the user data directory identified by the channel param (default channel is stable). Requires the remote debugging server to be started in the Chrome instance via chrome://inspect/#remote-debugging.',
-    conflicts: ['isolated', 'executablePath', 'categoryExtensions'],
+    conflicts: ['isolated', 'executablePath'],
     default: false,
     coerce: (value: boolean | undefined) => {
       if (!value) {
@@ -26,7 +26,7 @@ export const cliOptions = {
     description:
       'Connect to a running, debuggable Chrome instance (e.g. `http://127.0.0.1:9222`). For more details see: https://github.com/ChromeDevTools/chrome-devtools-mcp#connecting-to-a-running-chrome-instance.',
     alias: 'u',
-    conflicts: ['wsEndpoint', 'categoryExtensions'],
+    conflicts: ['wsEndpoint'],
     coerce: (url: string | undefined) => {
       if (!url) {
         return;
@@ -44,7 +44,7 @@ export const cliOptions = {
     description:
       'WebSocket endpoint to connect to a running Chrome instance (e.g., ws://127.0.0.1:9222/devtools/browser/<id>). Alternative to --browserUrl.',
     alias: 'w',
-    conflicts: ['browserUrl', 'categoryExtensions'],
+    conflicts: ['browserUrl'],
     coerce: (url: string | undefined) => {
       if (!url) {
         return;
@@ -113,7 +113,7 @@ export const cliOptions = {
     type: 'string',
     description:
       'Specify a different Chrome channel that should be used. The default is the stable channel version.',
-    choices: ['stable', 'canary', 'beta', 'dev'] as const,
+    choices: ['canary', 'dev', 'beta', 'stable'] as const,
     conflicts: ['browserUrl', 'wsEndpoint', 'executablePath'],
   },
   logFile: {
@@ -150,29 +150,40 @@ export const cliOptions = {
   experimentalPageIdRouting: {
     type: 'boolean',
     describe:
-      'Whether to expose pageId on page-scoped tools and route requests by page ID.',
-    hidden: true,
+      'Whether to expose pageId on page-scoped tools and route requests by page ID (useful for concurrent agent sessions).',
   },
   experimentalDevtools: {
     type: 'boolean',
     describe: 'Whether to enable automation over DevTools targets',
-    hidden: true,
   },
   experimentalVision: {
     type: 'boolean',
     describe:
       'Whether to enable coordinate-based tools such as click_at(x,y). Usually requires a computer-use model able to produce accurate coordinates by looking at screenshots.',
-    hidden: false,
+  },
+  memoryDebugging: {
+    type: 'boolean',
+    describe: 'Whether to enable memory debugging tools.',
+    alias: 'experimentalMemory',
   },
   experimentalStructuredContent: {
     type: 'boolean',
     describe: 'Whether to output structured formatted content.',
+  },
+  experimentalToonFormat: {
+    type: 'boolean',
+    describe:
+      'Whether to format structured data in text response using Token-Oriented Object Notation. Defaults to false which represents the embedded content as formatted JSON instead.',
     hidden: true,
   },
   experimentalIncludeAllPages: {
     type: 'boolean',
     describe:
       'Whether to include all kinds of pages such as webviews or background pages as pages.',
+  },
+  experimentalNavigationAllowlist: {
+    type: 'boolean',
+    describe: 'Whether to enable navigation allowlist tool parameter.',
     hidden: true,
   },
   experimentalInteropTools: {
@@ -185,10 +196,32 @@ export const cliOptions = {
     describe:
       'Exposes experimental screencast tools (requires ffmpeg). Install ffmpeg https://www.ffmpeg.org/download.html and ensure it is available in the MCP server PATH.',
   },
+  experimentalFfmpegPath: {
+    type: 'string',
+    describe: 'Path to ffmpeg executable for screencast recording.',
+    implies: 'experimentalScreencast',
+  },
+  categoryExperimentalWebmcp: {
+    type: 'boolean',
+    describe:
+      'Set to true to enable debugging WebMCP tools. Requires Chrome 149+ with the following flags: `--enable-features=WebMCP,DevToolsWebMCPSupport`',
+  },
   chromeArg: {
     type: 'array',
     describe:
       'Additional arguments for Chrome. Only applies when Chrome is launched by chrome-devtools-mcp.',
+  },
+  blockedUrlPattern: {
+    type: 'array',
+    describe:
+      'Restricts network access by blocking specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Silently detaches from targets with blocked URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.',
+    conflicts: ['allowedUrlPattern'],
+  },
+  allowedUrlPattern: {
+    type: 'array',
+    describe:
+      'Restricts network access by allowing only specified URL patterns (uses https://urlpattern.spec.whatwg.org/). Requires Chrome 149+. Silently detaches from targets with unallowed URLs upon connection, and blocks runtime requests (including navigations and subresources). Accepts an array of patterns.',
+    conflicts: ['blockedUrlPattern'],
   },
   ignoreDefaultChromeArg: {
     type: 'array',
@@ -212,16 +245,16 @@ export const cliOptions = {
   },
   categoryExtensions: {
     type: 'boolean',
-    hidden: true,
-    conflicts: ['browserUrl', 'autoConnect', 'wsEndpoint'],
+    hidden: false,
+    default: false,
     describe:
-      'Set to true to include tools related to extensions. Note: This feature is only supported with a pipe connection. autoConnect is not supported.',
+      'Set to true to include tools related to extensions. Note: This feature is currently only supported with a pipe connection. autoConnect, browserUrl, and wsEndpoint are not supported with this feature until 149 will be released.',
   },
-  categoryInPageTools: {
+  categoryExperimentalThirdParty: {
     type: 'boolean',
-    hidden: true,
+    default: false,
     describe:
-      'Set to true to enable tools exposed by the inspected page itself',
+      'Set to true to enable third-party developer tools exposed by the inspected page itself',
   },
   performanceCrux: {
     type: 'boolean',
@@ -250,6 +283,60 @@ export const cliOptions = {
     hidden: true,
     describe: 'Include watchdog PID in Clearcut request headers (for testing).',
   },
+  screenshotFormat: {
+    type: 'string',
+    description:
+      'Override the default output format used by take_screenshot when the caller does not specify one. JPEG and WebP are ~3-5x smaller than PNG, which helps reduce context size in AI conversations. Unset preserves the existing default ("png").',
+    choices: ['jpeg', 'png', 'webp'] as const,
+  },
+  screenshotQuality: {
+    type: 'number',
+    description:
+      'Override the default compression quality (0-100) used by take_screenshot for JPEG and WebP when the caller does not specify one. Lower values mean smaller files. Ignored for PNG. Unset preserves the Puppeteer default.',
+    coerce: (value: number | undefined) => {
+      if (value === undefined) {
+        return;
+      }
+      if (!Number.isInteger(value) || value < 0 || value > 100) {
+        throw new Error(
+          `Invalid screenshotQuality ${value}. Expected an integer between 0 and 100.`,
+        );
+      }
+      return value;
+    },
+  },
+  screenshotMaxWidth: {
+    type: 'number',
+    description:
+      'Maximum width in pixels for screenshots. If the captured image is wider, it is downscaled (preserving aspect ratio) before being returned. Reduces context size in AI conversations. Unset means no resize.',
+    coerce: (value: number | undefined) => {
+      if (value === undefined) {
+        return;
+      }
+      if (!Number.isInteger(value) || value <= 0) {
+        throw new Error(
+          `Invalid screenshotMaxWidth ${value}. Expected a positive integer.`,
+        );
+      }
+      return value;
+    },
+  },
+  screenshotMaxHeight: {
+    type: 'number',
+    description:
+      'Maximum height in pixels for screenshots. If the captured image is taller, it is downscaled (preserving aspect ratio) before being returned. Can be combined with --screenshot-max-width; the smaller scale factor wins. Unset means no resize.',
+    coerce: (value: number | undefined) => {
+      if (value === undefined) {
+        return;
+      }
+      if (!Number.isInteger(value) || value <= 0) {
+        throw new Error(
+          `Invalid screenshotMaxHeight ${value}. Expected a positive integer.`,
+        );
+      }
+      return value;
+    },
+  },
   slim: {
     type: 'boolean',
     describe:
@@ -264,18 +351,22 @@ export const cliOptions = {
   redactNetworkHeaders: {
     type: 'boolean',
     describe:
-      'If true, redacts some of the network headers considered senstive before returning to the client.',
+      'If true, redacts some of the network headers considered sensitive before returning to the client.',
     default: false,
   },
 } satisfies Record<string, YargsOptions>;
 
 export type ParsedArguments = ReturnType<typeof parseArguments>;
 
-export function parseArguments(version: string, argv = process.argv) {
+export function parseArguments(
+  version: string,
+  argv = process.argv,
+  env = process.env,
+) {
   const yargsInstance = yargs(hideBin(argv))
     .scriptName('npx chrome-devtools-mcp@latest')
     .options(cliOptions)
-    .check(args => {
+    .middleware(args => {
       // We can't set default in the options else
       // Yargs will complain
       if (
@@ -286,7 +377,12 @@ export function parseArguments(version: string, argv = process.argv) {
       ) {
         args.channel = 'stable';
       }
-      return true;
+      if (env['CI'] || env['CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS']) {
+        console.error(
+          "turning off usage statistics. process.env['CI'] || process.env['CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS'] is set.",
+        );
+        args.usageStatistics = false;
+      }
     })
     .example([
       [

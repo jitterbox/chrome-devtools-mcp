@@ -16,7 +16,10 @@ import type {ParsedArguments} from '../src/bin/chrome-devtools-mcp-cli-options.j
 import type {McpContext} from '../src/McpContext.js';
 import type {McpResponse} from '../src/McpResponse.js';
 import {replaceHtmlElementsWithUids} from '../src/McpResponse.js';
-import type {JSONSchema7Definition} from '../src/third_party/index.js';
+import type {
+  Extension,
+  JSONSchema7Definition,
+} from '../src/third_party/index.js';
 import {
   closePage,
   listPages,
@@ -53,8 +56,8 @@ describe('McpResponse', () => {
         context,
       );
       assert.equal(content[0].type, 'text');
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -69,8 +72,8 @@ describe('McpResponse', () => {
         context,
       );
       assert.equal(content[0].type, 'text');
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -84,8 +87,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -107,8 +110,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -131,8 +134,8 @@ describe('McpResponse', () => {
         context,
       );
       assert.equal(content[0].type, 'text');
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -150,13 +153,13 @@ describe('McpResponse', () => {
         context,
       );
       assert.equal(content[0].type, 'text');
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(JSON.stringify(structuredContent, null, 2));
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(JSON.stringify(structuredContent, null, 2));
     });
   });
 
   it('saves snapshot to file and returns structured content', async t => {
-    const filePath = join(tmpdir(), 'test-screenshot.png');
+    const filePath = join(tmpdir(), 'test-snapshot.txt');
     try {
       await withMcpContext(async (response, context) => {
         const page = context.getSelectedPptrPage();
@@ -170,10 +173,8 @@ describe('McpResponse', () => {
           context,
         );
         assert.equal(content[0].type, 'text');
-        t.assert.snapshot?.(
-          stabilizeResponseOutput(getTextContent(content[0])),
-        );
-        t.assert.snapshot?.(
+        t.assert.snapshot(stabilizeResponseOutput(getTextContent(content[0])));
+        t.assert.snapshot(
           JSON.stringify(
             stabilizeStructuredContent(structuredContent),
             null,
@@ -182,7 +183,7 @@ describe('McpResponse', () => {
         );
       });
       const content = await readFile(filePath, 'utf-8');
-      t.assert.snapshot?.(stabilizeResponseOutput(content));
+      t.assert.snapshot(stabilizeResponseOutput(content));
     } finally {
       await rm(filePath, {force: true});
     }
@@ -301,8 +302,8 @@ describe('McpResponse', () => {
         context,
       );
       assert.equal(content[0].type, 'text');
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -315,8 +316,8 @@ describe('McpResponse', () => {
         context,
       );
       await context.emulate({});
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -328,11 +329,11 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
+      t.assert.snapshot(getTextContent(content[0]));
       assert.equal(content[1].type, 'image');
       assert.strictEqual(getImageContent(content[1]).data, 'imageBase64');
       assert.strictEqual(getImageContent(content[1]).mimeType, 'image/png');
-      t.assert.snapshot?.(
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -345,8 +346,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -359,8 +360,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -375,8 +376,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -389,8 +390,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -403,8 +404,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -427,8 +428,8 @@ describe('McpResponse', () => {
         context,
       );
       await page.getDialog()?.dismiss();
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -451,8 +452,8 @@ describe('McpResponse', () => {
         context,
       );
       await page.getDialog()?.dismiss();
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -468,8 +469,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -485,8 +486,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -523,8 +524,8 @@ describe('McpResponse', () => {
         context,
       );
 
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -545,8 +546,8 @@ describe('McpResponse', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -570,8 +571,8 @@ describe('McpResponse', () => {
         context,
       );
       assert.ok(getTextContent(content[0]));
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -585,8 +586,8 @@ describe('McpResponse', () => {
         context,
       );
       assert.ok(getTextContent(content[0]));
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -611,7 +612,7 @@ describe('McpResponse', () => {
       );
       const text = getTextContent(content[0]);
       assert.ok(text.includes('<no console messages found>'));
-      t.assert.snapshot?.(
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -657,8 +658,8 @@ describe('McpResponse network request filtering', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -680,8 +681,8 @@ describe('McpResponse network request filtering', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -703,8 +704,8 @@ describe('McpResponse network request filtering', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -727,8 +728,8 @@ describe('McpResponse network request filtering', () => {
         context,
       );
 
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -752,8 +753,8 @@ describe('McpResponse network request filtering', () => {
         'test',
         context,
       );
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -774,7 +775,7 @@ describe('McpResponse network pagination', () => {
       assert.ok(text.includes('Showing 1-5 of 5 (Page 1 of 1).'));
       assert.ok(!text.includes('Next page:'));
       assert.ok(!text.includes('Previous page:'));
-      t.assert.snapshot?.(
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -797,7 +798,7 @@ describe('McpResponse network pagination', () => {
       assert.ok(text.includes('Showing 1-10 of 30 (Page 1 of 3).'));
       assert.ok(text.includes('Next page: 1'));
       assert.ok(!text.includes('Previous page:'));
-      t.assert.snapshot?.(
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -821,7 +822,7 @@ describe('McpResponse network pagination', () => {
       assert.ok(text.includes('Showing 11-20 of 25 (Page 2 of 3).'));
       assert.ok(text.includes('Next page: 2'));
       assert.ok(text.includes('Previous page: 0'));
-      t.assert.snapshot?.(
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -844,7 +845,7 @@ describe('McpResponse network pagination', () => {
         text.includes('Invalid page number provided. Showing first page.'),
       );
       assert.ok(text.includes('Showing 1-2 of 5 (Page 1 of 3).'));
-      t.assert.snapshot?.(
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
@@ -865,15 +866,15 @@ describe('McpResponse network pagination', () => {
           context,
         );
 
-        t.assert.snapshot?.(getTextContent(content[0]));
+        t.assert.snapshot(getTextContent(content[0]));
         const typedStructuredContent = structuredContent as {
           traceSummary?: string;
           traceInsights?: unknown[];
         };
-        t.assert.snapshot?.(
+        t.assert.snapshot(
           JSON.stringify(typedStructuredContent.traceSummary, null, 2),
         );
-        t.assert.snapshot?.(
+        t.assert.snapshot(
           JSON.stringify(typedStructuredContent.traceInsights, null, 2),
         );
       });
@@ -899,8 +900,8 @@ describe('McpResponse network pagination', () => {
           context,
         );
 
-        t.assert.snapshot?.(getTextContent(content[0]));
-        t.assert.snapshot?.(
+        t.assert.snapshot(getTextContent(content[0]));
+        t.assert.snapshot(
           JSON.stringify(
             stabilizeStructuredContent(structuredContent),
             null,
@@ -928,8 +929,8 @@ describe('McpResponse network pagination', () => {
           context,
         );
 
-        t.assert.snapshot?.(getTextContent(content[0]));
-        t.assert.snapshot?.(
+        t.assert.snapshot(getTextContent(content[0]));
+        t.assert.snapshot(
           JSON.stringify(
             stabilizeStructuredContent(structuredContent),
             null,
@@ -955,30 +956,39 @@ describe('extensions', () => {
 
       response.resetResponseLineForTesting();
       // Testing with extensions
-      context.listExtensions = () => [
-        {
-          id: 'id1',
-          name: 'Extension 1',
-          version: '1.0',
-          isEnabled: true,
-          path: '/path/to/ext1',
-        },
-        {
-          id: 'id2',
-          name: 'Extension 2',
-          version: '2.0',
-          isEnabled: false,
-          path: '/path/to/ext2',
-        },
-      ];
+      context.listExtensions = async () =>
+        Promise.resolve(
+          new Map<string, Extension>([
+            [
+              'id1',
+              {
+                id: 'id1',
+                name: 'Extension 1',
+                version: '1.0',
+                enabled: true,
+                path: '/path/to/ext1',
+              } as Extension,
+            ],
+            [
+              'id2',
+              {
+                id: 'id2',
+                name: 'Extension 2',
+                version: '2.0',
+                enabled: false,
+                path: '/path/to/ext2',
+              } as Extension,
+            ],
+          ]),
+        );
       response.setListExtensions();
       const {content, structuredContent} = await response.handle(
         'test',
         context,
       );
 
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(JSON.stringify(structuredContent, null, 2));
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(JSON.stringify(structuredContent, null, 2));
     });
   });
 });
@@ -1020,15 +1030,15 @@ describe('lighthouse', () => {
       assert.ok(text.includes('- /tmp/report.json'));
       assert.ok(text.includes('- /tmp/report.html'));
 
-      t.assert.snapshot?.(getTextContent(content[0]));
-      t.assert.snapshot?.(
+      t.assert.snapshot(getTextContent(content[0]));
+      t.assert.snapshot(
         JSON.stringify(stabilizeStructuredContent(structuredContent), null, 2),
       );
     });
   });
 });
 
-describe('inPage tools', () => {
+describe('third-party developer tools', () => {
   function stubToolDiscovery(page: object) {
     // @ts-expect-error Internal API
     const client = page._client();
@@ -1055,55 +1065,48 @@ describe('inPage tools', () => {
       });
   }
 
-  it('lists in-page tools', async t => {
+  it('lists third-party developer tools', async t => {
     await withMcpContext(
       async (response, context) => {
-        response.setListInPageTools();
-        const emptyResult = await response.handle('test', context);
-        const emptyText = getTextContent(emptyResult.content[0]);
-        assert.ok(
-          emptyText.includes('No in-page tools available.'),
-          'Should show message for empty in-page tools',
-        );
-
-        response.resetResponseLineForTesting();
         const mcpPage = context.getSelectedMcpPage();
         stubToolDiscovery(mcpPage.pptrPage);
-        sinon.stub(mcpPage.pptrPage, 'evaluate').resolves({
-          name: 'My Tool Group',
-          description: 'A group of tools',
-          tools: [
-            {
-              name: 'myTool',
-              description: 'Does something',
-              inputSchema: {
-                type: 'object',
-                properties: {
-                  foo: {type: 'string'},
+        sinon.stub(mcpPage.pptrPage, 'evaluate').resolves([
+          {
+            name: 'My Tool Group',
+            description: 'A group of tools',
+            tools: [
+              {
+                name: 'myTool',
+                description: 'Does something',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    foo: {type: 'string'},
+                  },
                 },
               },
-            },
-          ],
-        });
-        response.setListInPageTools();
+            ],
+          },
+        ]);
+        response.setListThirdPartyDeveloperTools();
         const {content, structuredContent} = await response.handle(
           'test',
           context,
         );
         const responseText = getTextContent(content[0]);
-        t.assert.snapshot?.(responseText);
+        t.assert.snapshot(responseText);
         assert.ok(
           responseText.includes('inputSchema={"type":"object"'),
           'Response should include inputSchema',
         );
-        t.assert.snapshot?.(JSON.stringify(structuredContent, null, 2));
+        t.assert.snapshot(JSON.stringify(structuredContent, null, 2));
       },
       undefined,
-      {categoryInPageTools: true} as ParsedArguments,
+      {categoryExperimentalThirdParty: true} as ParsedArguments,
     );
   });
 
-  async function testIncludesInPageTools(
+  async function testIncludesThirdPartyDeveloperTools(
     handlerAction: (
       response: McpResponse,
       context: McpContext,
@@ -1118,11 +1121,11 @@ describe('inPage tools', () => {
         const initScript = `
           window.__dtmcp = {
             toolGroup: {
-              name: 'In-Page group',
+              name: 'Tool group name',
               description: 'Test tools',
               tools: [
                 {
-                  name: 'inPageTool',
+                  name: '3pDeveloperTool',
                   description: 'A test tool',
                   inputSchema: {
                     type: 'object',
@@ -1145,43 +1148,43 @@ describe('inPage tools', () => {
         const {content} = await response.handle(toolName, context);
         const responseText = getTextContent(content[0]);
         assert.ok(
-          responseText.includes('inPageTool'),
-          `Should include in-page tool name in the ${toolName} response`,
+          responseText.includes('3pDeveloperTool'),
+          `Should include third-party developer tool name in the ${toolName} response`,
         );
       },
       undefined,
-      {categoryInPageTools: true} as ParsedArguments,
+      {categoryExperimentalThirdParty: true} as ParsedArguments,
     );
   }
 
-  it('includes in-page tools in list_pages response', async () => {
-    await testIncludesInPageTools(async (response, context) => {
+  it('includes third-party developer tools in list_pages response', async () => {
+    await testIncludesThirdPartyDeveloperTools(async (response, context) => {
       const listPagesDef = listPages({
-        categoryInPageTools: true,
+        categoryExperimentalThirdParty: true,
       } as ParsedArguments);
       await listPagesDef.handler({params: {}}, response, context);
     }, 'list_pages');
   });
 
-  it('includes in-page tools in select_page response', async () => {
-    await testIncludesInPageTools(async (response, context) => {
+  it('includes third-party developer tools in select_page response', async () => {
+    await testIncludesThirdPartyDeveloperTools(async (response, context) => {
       const pageId =
         context.getPageId(context.getSelectedMcpPage().pptrPage) ?? 1;
       await selectPage.handler({params: {pageId}}, response, context);
     }, 'select_page');
   });
 
-  it('includes in-page tools in close_page response', async () => {
-    await testIncludesInPageTools(async (response, context) => {
+  it('includes third-party developer tools in close_page response', async () => {
+    await testIncludesThirdPartyDeveloperTools(async (response, context) => {
       const pageId =
         context.getPageId(context.getSelectedMcpPage().pptrPage) ?? 1;
       await closePage.handler({params: {pageId}}, response, context);
     }, 'close_page');
   });
 
-  it('includes in-page tools in navigate_page response', async () => {
-    await testIncludesInPageTools(async (response, context) => {
-      await navigatePage.handler(
+  it('includes third-party developer tools in navigate_page response', async () => {
+    await testIncludesThirdPartyDeveloperTools(async (response, context) => {
+      await navigatePage().handler(
         {
           params: {type: 'url', url: 'about:blank'},
           page: context.getSelectedMcpPage(),
@@ -1192,12 +1195,12 @@ describe('inPage tools', () => {
     }, 'navigate_page');
   });
 
-  it('includes in-page tools in new_page response', async () => {
-    await testIncludesInPageTools(async (response, context) => {
-      // Workaround to ensure the test environment's new page contain in-page tools
+  it('includes third-party developer tools in new_page response', async () => {
+    await testIncludesThirdPartyDeveloperTools(async (response, context) => {
+      // Workaround to ensure the test environment's new page contain third-party developer tools
       sinon.stub(context, 'newPage').resolves(context.getSelectedMcpPage());
 
-      await newPage.handler(
+      await newPage().handler(
         {
           params: {url: 'about:blank'},
         },
@@ -1453,5 +1456,137 @@ describe('replaceHtmlElementsWithUids', () => {
     } else {
       assert.fail('Unexpected schema structure');
     }
+  });
+});
+
+describe('webmcp', () => {
+  async function testIncludesWebmcpTools(
+    t: it.TestContext,
+    parseArguments: ParsedArguments,
+    handlerAction: (
+      response: McpResponse,
+      context: McpContext,
+    ) => Promise<void>,
+    toolName: string,
+  ) {
+    await withMcpContext(
+      async (response, context) => {
+        response.setListWebMcpTools();
+
+        await handlerAction(response, context);
+
+        const page = context.getSelectedMcpPage().pptrPage;
+        const {resolve, promise} = Promise.withResolvers();
+        page.webmcp.once('toolsadded', () => {
+          resolve(undefined);
+        });
+        await page.setContent(
+          html`<form
+            toolname="test_tool"
+            tooldescription="A test tool"
+          ></form>`,
+        );
+        await promise;
+
+        const {content, structuredContent} = await response.handle(
+          toolName,
+          context,
+        );
+        assert.ok(getTextContent(content[0]));
+        t.assert.snapshot(getTextContent(content[0]));
+        t.assert.snapshot(
+          JSON.stringify(
+            stabilizeStructuredContent(structuredContent),
+            null,
+            2,
+          ),
+        );
+      },
+      {args: ['--enable-features=WebMCP,DevToolsWebMCPSupport']},
+      parseArguments,
+    );
+  }
+
+  it('includes webmcp tools in list_pages response', async t => {
+    await testIncludesWebmcpTools(
+      t,
+      {categoryExperimentalWebmcp: true} as ParsedArguments,
+      async (response, context) => {
+        await listPages().handler({params: {}}, response, context);
+      },
+      'list_pages',
+    );
+  });
+
+  it('includes webmcp tools in select_page response', async t => {
+    await testIncludesWebmcpTools(
+      t,
+      {categoryExperimentalWebmcp: true} as ParsedArguments,
+      async (response, context) => {
+        const pageId =
+          context.getPageId(context.getSelectedMcpPage().pptrPage) ?? 1;
+        await selectPage.handler({params: {pageId}}, response, context);
+      },
+      'select_page',
+    );
+  });
+
+  it('includes webmcp tools in navigate_page response', async t => {
+    await testIncludesWebmcpTools(
+      t,
+      {categoryExperimentalWebmcp: true} as ParsedArguments,
+      async (response, context) => {
+        await navigatePage().handler(
+          {
+            params: {type: 'url', url: 'about:blank'},
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+      },
+      'navigate_page',
+    );
+  });
+
+  it('list no webmcp tools if there are none', async t => {
+    await withMcpContext(
+      async (response, context) => {
+        response.setListWebMcpTools();
+        const {content, structuredContent} = await response.handle(
+          'test',
+          context,
+        );
+        assert.ok(getTextContent(content[0]));
+        t.assert.snapshot(getTextContent(content[0]));
+        t.assert.snapshot(
+          JSON.stringify(
+            stabilizeStructuredContent(structuredContent),
+            null,
+            2,
+          ),
+        );
+      },
+      {args: ['--enable-features=WebMCP,DevToolsWebMCPSupport']},
+      {categoryExperimentalWebmcp: true} as ParsedArguments,
+    );
+  });
+
+  it('list no webmcp tools if experimentalWebmcp is false', async t => {
+    await testIncludesWebmcpTools(
+      t,
+      {categoryExperimentalWebmcp: false} as ParsedArguments,
+      async (response, context) => {
+        await navigatePage().handler(
+          {
+            params: {type: 'url', url: 'about:blank'},
+            page: context.getSelectedMcpPage(),
+          },
+          response,
+          context,
+        );
+      },
+      'navigate_page',
+    );
   });
 });

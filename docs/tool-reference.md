@@ -1,8 +1,8 @@
 <!-- AUTO GENERATED DO NOT EDIT - run 'npm run gen' to update-->
 
-# Chrome DevTools MCP Tool Reference (~6951 cl100k_base tokens)
+# Chrome DevTools MCP Tool Reference
 
-- **[Input automation](#input-automation)** (9 tools)
+- **[Input automation](#input-automation)** (10 tools)
   - [`click`](#click)
   - [`drag`](#drag)
   - [`fill`](#fill)
@@ -12,6 +12,7 @@
   - [`press_key`](#press_key)
   - [`type_text`](#type_text)
   - [`upload_file`](#upload_file)
+  - [`click_at`](#click_at)
 - **[Navigation automation](#navigation-automation)** (6 tools)
   - [`close_page`](#close_page)
   - [`list_pages`](#list_pages)
@@ -22,21 +23,44 @@
 - **[Emulation](#emulation)** (2 tools)
   - [`emulate`](#emulate)
   - [`resize_page`](#resize_page)
-- **[Performance](#performance)** (4 tools)
+- **[Performance](#performance)** (3 tools)
   - [`performance_analyze_insight`](#performance_analyze_insight)
   - [`performance_start_trace`](#performance_start_trace)
   - [`performance_stop_trace`](#performance_stop_trace)
-  - [`take_memory_snapshot`](#take_memory_snapshot)
 - **[Network](#network)** (2 tools)
   - [`get_network_request`](#get_network_request)
   - [`list_network_requests`](#list_network_requests)
-- **[Debugging](#debugging)** (6 tools)
+- **[Debugging](#debugging)** (8 tools)
   - [`evaluate_script`](#evaluate_script)
   - [`get_console_message`](#get_console_message)
   - [`lighthouse_audit`](#lighthouse_audit)
   - [`list_console_messages`](#list_console_messages)
   - [`take_screenshot`](#take_screenshot)
   - [`take_snapshot`](#take_snapshot)
+  - [`screencast_start`](#screencast_start)
+  - [`screencast_stop`](#screencast_stop)
+- **[Memory](#memory)** (9 tools)
+  - [`take_heapsnapshot`](#take_heapsnapshot)
+  - [`close_heapsnapshot`](#close_heapsnapshot)
+  - [`get_heapsnapshot_class_nodes`](#get_heapsnapshot_class_nodes)
+  - [`get_heapsnapshot_details`](#get_heapsnapshot_details)
+  - [`get_heapsnapshot_dominators`](#get_heapsnapshot_dominators)
+  - [`get_heapsnapshot_edges`](#get_heapsnapshot_edges)
+  - [`get_heapsnapshot_retainers`](#get_heapsnapshot_retainers)
+  - [`get_heapsnapshot_retaining_paths`](#get_heapsnapshot_retaining_paths)
+  - [`get_heapsnapshot_summary`](#get_heapsnapshot_summary)
+- **[Extensions](#extensions)** (5 tools)
+  - [`install_extension`](#install_extension)
+  - [`list_extensions`](#list_extensions)
+  - [`reload_extension`](#reload_extension)
+  - [`trigger_extension_action`](#trigger_extension_action)
+  - [`uninstall_extension`](#uninstall_extension)
+- **[Third-party](#third-party)** (2 tools)
+  - [`execute_3p_developer_tool`](#execute_3p_developer_tool)
+  - [`list_3p_developer_tools`](#list_3p_developer_tools)
+- **[WebMCP](#webmcp)** (2 tools)
+  - [`execute_webmcp_tool`](#execute_webmcp_tool)
+  - [`list_webmcp_tools`](#list_webmcp_tools)
 
 ## Input automation
 
@@ -71,14 +95,14 @@
 **Parameters:**
 
 - **uid** (string) **(required)**: The uid of an element on the page from the page content snapshot
-- **value** (string) **(required)**: The value to [`fill`](#fill) in
+- **value** (string) **(required)**: The value to [`fill`](#fill) in. "true" or "false" for checkboxes and toggles, "true" for radio buttons.
 - **includeSnapshot** (boolean) _(optional)_: Whether to include a snapshot in the response. Default is false.
 
 ---
 
 ### `fill_form`
 
-**Description:** [`Fill`](#fill) out multiple form elements at once
+**Description:** [`Fill`](#fill) out multiple form elements (inputs, selects, checkboxes, radios) at once. ALWAYS prefer this tool over multiple individual '[`fill`](#fill)' or '[`click`](#click)' calls when interacting with forms. It is significantly faster, more reliable, and reduces turn count. Example: [`Fill`](#fill) username, password, and check "Remember Me" in one call.
 
 **Parameters:**
 
@@ -139,6 +163,19 @@
 
 - **filePath** (string) **(required)**: The local path of the file to upload
 - **uid** (string) **(required)**: The uid of the file input element or an element that will open file chooser on the page from the page content snapshot
+- **includeSnapshot** (boolean) _(optional)_: Whether to include a snapshot in the response. Default is false.
+
+---
+
+### `click_at`
+
+**Description:** Clicks at the provided coordinates (requires flag: --experimentalVision=true)
+
+**Parameters:**
+
+- **x** (number) **(required)**: The x coordinate
+- **y** (number) **(required)**: The y coordinate
+- **dblClick** (boolean) _(optional)_: Set to true for double clicks. Default is false.
 - **includeSnapshot** (boolean) _(optional)_: Whether to include a snapshot in the response. Default is false.
 
 ---
@@ -223,7 +260,8 @@
 
 - **colorScheme** (enum: "dark", "light", "auto") _(optional)_: [`Emulate`](#emulate) the dark or the light mode. Set to "auto" to reset to the default.
 - **cpuThrottlingRate** (number) _(optional)_: Represents the CPU slowdown factor. Omit or set the rate to 1 to disable throttling
-- **geolocation** (string) _(optional)_: Geolocation (`&lt;latitude&gt;x&lt;longitude&gt;`) to [`emulate`](#emulate). Latitude between -90 and 90. Longitude between -180 and 180. Omit to clear the geolocation override.
+- **extraHttpHeaders** (string) _(optional)_: Extra HTTP headers as a JSON string object, e.g. {"X-Custom": "value", "Authorization": "Bearer token"}. Headers are included into every HTTP request originating from the page and persist across navigations until cleared. Pass an empty string to clear all extra headers.
+- **geolocation** (string) _(optional)_: Geolocation (`&lt;latitude&gt;,&lt;longitude&gt;`) to [`emulate`](#emulate). Latitude between -90 and 90. Longitude between -180 and 180. Omit to clear the geolocation override.
 - **networkConditions** (enum: "Offline", "Slow 3G", "Fast 3G", "Slow 4G", "Fast 4G") _(optional)_: Throttle network. Omit to disable throttling.
 - **userAgent** (string) _(optional)_: User agent to [`emulate`](#emulate). Set to empty string to clear the user agent override.
 - **viewport** (string) _(optional)_: [`Emulate`](#emulate) device viewports '&lt;width&gt;x&lt;height&gt;x&lt;devicePixelRatio&gt;[,mobile][,touch][,landscape]'. 'touch' and 'mobile' to [`emulate`](#emulate) mobile devices. 'landscape' to [`emulate`](#emulate) landscape mode.
@@ -276,16 +314,6 @@
 
 ---
 
-### `take_memory_snapshot`
-
-**Description:** Capture a heap snapshot of the currently selected page. Use to analyze the memory distribution of JavaScript objects and debug memory leaks.
-
-**Parameters:**
-
-- **filePath** (string) **(required)**: A path to a .heapsnapshot file to save the heapsnapshot to.
-
----
-
 ## Network
 
 ### `get_network_request`
@@ -295,8 +323,8 @@
 **Parameters:**
 
 - **reqid** (number) _(optional)_: The reqid of the network request. If omitted returns the currently selected request in the DevTools Network panel.
-- **requestFilePath** (string) _(optional)_: The absolute or relative path to save the request body to. If omitted, the body is returned inline.
-- **responseFilePath** (string) _(optional)_: The absolute or relative path to save the response body to. If omitted, the body is returned inline.
+- **requestFilePath** (string) _(optional)_: The absolute or relative path to a .network-request file to save the request body to. If omitted, the body is returned inline.
+- **responseFilePath** (string) _(optional)_: The absolute or relative path to a .network-response file to save the response body to. If omitted, the body is returned inline.
 
 ---
 
@@ -333,6 +361,8 @@ so returned values have to be JSON-serializable.
 }`
 
 - **args** (array) _(optional)_: An optional list of arguments to pass to the function.
+- **dialogAction** (string) _(optional)_: Handle dialogs while execution. "accept", "dismiss", or string for response of window.prompt. Defaults to accept.
+- **filePath** (string) _(optional)_: The absolute or relative path to a file to save the script output to. If omitted, the output is returned inline.
 
 ---
 
@@ -348,7 +378,7 @@ so returned values have to be JSON-serializable.
 
 ### `lighthouse_audit`
 
-**Description:** Get Lighthouse score and reports for accessibility, SEO and best practices. This excludes performance. For performance audits, run [`performance_start_trace`](#performance_start_trace)
+**Description:** Get Lighthouse score and reports for accessibility, SEO, best practices, and agentic browsing. This excludes performance. For performance audits, run [`performance_start_trace`](#performance_start_trace)
 
 **Parameters:**
 
@@ -367,6 +397,7 @@ so returned values have to be JSON-serializable.
 - **includePreservedMessages** (boolean) _(optional)_: Set to true to return the preserved messages over the last 3 navigations.
 - **pageIdx** (integer) _(optional)_: Page number to return (0-based). When omitted, returns the first page.
 - **pageSize** (integer) _(optional)_: Maximum number of messages to return. When omitted, returns all messages.
+- **serviceWorkerId** (string) _(optional)_: Filter messages to only return messages of the specified service worker.
 - **types** (array) _(optional)_: Filter messages to only return messages of the specified resource types. When omitted or empty, returns all messages.
 
 ---
@@ -395,5 +426,235 @@ in the DevTools Elements panel (if any).
 
 - **filePath** (string) _(optional)_: The absolute path, or a path relative to the current working directory, to save the snapshot to instead of attaching it to the response.
 - **verbose** (boolean) _(optional)_: Whether to include all possible information available in the full a11y tree. Default is false.
+
+---
+
+### `screencast_start`
+
+**Description:** Starts recording a screencast (video) of the selected page in specified format. (requires flag: --experimentalScreencast=true)
+
+**Parameters:**
+
+- **filePath** (string) _(optional)_: Output file path (.webm,.mp4 are supported). Uses mkdtemp to generate a unique path if not provided.
+
+---
+
+### `screencast_stop`
+
+**Description:** Stops the active screencast recording on the selected page. (requires flag: --experimentalScreencast=true)
+
+**Parameters:** None
+
+---
+
+## Memory
+
+### `take_heapsnapshot`
+
+**Description:** Capture a heap snapshot of the currently selected page. Use to analyze the memory distribution of JavaScript objects and debug memory leaks.
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to save the heapsnapshot to.
+
+---
+
+### `close_heapsnapshot`
+
+**Description:** Closes a previously loaded memory heapsnapshot, freeing its memory. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to the .heapsnapshot file to close.
+
+---
+
+### `get_heapsnapshot_class_nodes`
+
+**Description:** Loads a memory heapsnapshot and returns instances of a specific class with their IDs. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **id** (number) **(required)**: The ID for the class, obtained from details.
+- **pageIdx** (number) _(optional)_: The page index for pagination.
+- **pageSize** (number) _(optional)_: The page size for pagination.
+
+---
+
+### `get_heapsnapshot_details`
+
+**Description:** Loads a memory heapsnapshot and returns all available information including statistics, static data, and aggregated node information. Supports pagination for aggregates. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **pageIdx** (number) _(optional)_: The page index for pagination of aggregates.
+- **pageSize** (number) _(optional)_: The page size for pagination of aggregates.
+
+---
+
+### `get_heapsnapshot_dominators`
+
+**Description:** Loads a memory heapsnapshot and returns the dominator chain for a specific node ID. This helps to identify which objects are keeping the target node alive. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **nodeId** (number) **(required)**: The node ID to get the dominator chain for.
+
+---
+
+### `get_heapsnapshot_edges`
+
+**Description:** Loads a memory heapsnapshot and returns outgoing edges (references) for a specific node ID. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **nodeId** (number) **(required)**: The node ID to get outgoing edges for.
+- **pageIdx** (number) _(optional)_: The page index for pagination.
+- **pageSize** (number) _(optional)_: The page size for pagination.
+
+---
+
+### `get_heapsnapshot_retainers`
+
+**Description:** Loads a memory heapsnapshot and returns retainers for a specific node ID. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **nodeId** (number) **(required)**: The node ID to get retainers for.
+- **pageIdx** (number) _(optional)_: The page index for pagination.
+- **pageSize** (number) _(optional)_: The page size for pagination.
+
+---
+
+### `get_heapsnapshot_retaining_paths`
+
+**Description:** Loads a memory heapsnapshot and returns retaining paths for a specific node ID. This helps to understand why a node is not being garbage collected. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+- **nodeId** (number) **(required)**: The node ID to get retaining paths for.
+- **maxDepth** (number) _(optional)_: The maximum depth to search for retaining paths.
+- **maxNodes** (number) _(optional)_: The maximum number of nodes to return.
+- **maxSiblings** (number) _(optional)_: The maximum number of siblings to return.
+
+---
+
+### `get_heapsnapshot_summary`
+
+**Description:** Loads a memory heapsnapshot and returns snapshot summary stats. (requires flag: --memoryDebugging=true)
+
+**Parameters:**
+
+- **filePath** (string) **(required)**: A path to a .heapsnapshot file to read.
+
+---
+
+## Extensions
+
+> NOTE: The Extensions category is not active by default. Use the '--categoryExtensions' flag.
+
+### `install_extension`
+
+**Description:** Installs a Chrome extension from the given path. (requires flag: --categoryExtensions=true)
+
+**Parameters:**
+
+- **path** (string) **(required)**: Absolute path to the unpacked extension folder.
+
+---
+
+### `list_extensions`
+
+**Description:** Lists all the Chrome extensions installed in the browser. This includes their name, ID, version, and enabled status. (requires flag: --categoryExtensions=true)
+
+**Parameters:** None
+
+---
+
+### `reload_extension`
+
+**Description:** Reloads an unpacked Chrome extension by its ID. (requires flag: --categoryExtensions=true)
+
+**Parameters:**
+
+- **id** (string) **(required)**: ID of the extension to reload.
+
+---
+
+### `trigger_extension_action`
+
+**Description:** Triggers the default action of an extension by its ID. (requires flag: --categoryExtensions=true)
+
+**Parameters:**
+
+- **id** (string) **(required)**: ID of the extension to trigger the action for.
+
+---
+
+### `uninstall_extension`
+
+**Description:** Uninstalls a Chrome extension by its ID. (requires flag: --categoryExtensions=true)
+
+**Parameters:**
+
+- **id** (string) **(required)**: ID of the extension to uninstall.
+
+---
+
+## Third-party
+
+> NOTE: The Third-party category is not active by default. Use the '--categoryExperimentalThirdParty' flag.
+
+### `execute_3p_developer_tool`
+
+**Description:** Executes a tool exposed by the page. (requires flag: --categoryExperimentalThirdParty=true)
+
+**Parameters:**
+
+- **toolName** (string) **(required)**: The name of the tool to execute
+- **params** (string) _(optional)_: The JSON-stringified parameters to pass to the tool
+
+---
+
+### `list_3p_developer_tools`
+
+**Description:** Lists all third-party developer tools the page exposes for providing runtime information.
+Third-party developer tools can be called via the '[`execute_3p_developer_tool`](#execute_3p_developer_tool)()' MCP tool.
+Alternatively, third-party developer tools can be executed by calling '[`evaluate_script`](#evaluate_script)' and adding the
+following command to the script:
+'window.\_\_dtmcp.executeTool(toolName, params)'
+This might be helpful when the third-party developer tools return non-serializable values or when composing
+third-party developer tools with additional functionality. (requires flag: --categoryExperimentalThirdParty=true)
+
+**Parameters:** None
+
+---
+
+## WebMCP
+
+> NOTE: The WebMCP category is not active by default. Use the '--categoryExperimentalWebmcp' flag.
+
+### `execute_webmcp_tool`
+
+**Description:** Executes a WebMCP tool exposed by the page. (requires flag: --categoryExperimentalWebmcp=true)
+
+**Parameters:**
+
+- **toolName** (string) **(required)**: The name of the WebMCP tool to execute
+- **input** (string) _(optional)_: The JSON-stringified parameters to pass to the WebMCP tool
+
+---
+
+### `list_webmcp_tools`
+
+**Description:** Lists all WebMCP tools the page exposes. (requires flag: --categoryExperimentalWebmcp=true)
+
+**Parameters:** None
 
 ---

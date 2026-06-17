@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import 'urlpattern-polyfill';
 import 'core-js/modules/es.promise.with-resolvers.js';
 import 'core-js/modules/es.set.union.v2.js';
 import 'core-js/proposals/iterator-helpers.js';
@@ -16,6 +17,7 @@ export type {Flags, Result, RunnerResult, OutputMode};
 export type {Options as YargsOptions} from 'yargs';
 export {default as yargs} from 'yargs';
 export {hideBin} from 'yargs/helpers';
+export {default as semver} from 'semver';
 export {default as debug} from 'debug';
 export type {Debugger} from 'debug';
 export {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -28,6 +30,10 @@ export {
   SetLevelRequestSchema,
   type ImageContent,
   type TextContent,
+  type Root,
+  ListRootsRequestSchema,
+  RootsListChangedNotificationSchema,
+  ListRootsResultSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 export {z as zod} from 'zod';
 export {default as ajv} from 'ajv';
@@ -41,13 +47,17 @@ export {default as puppeteer} from 'puppeteer-core';
 export type * from 'puppeteer-core';
 export {PipeTransport} from 'puppeteer-core/internal/node/PipeTransport.js';
 export type {CdpPage} from 'puppeteer-core/internal/cdp/Page.js';
+export type {CdpWebWorker} from 'puppeteer-core/internal/cdp/WebWorker.js';
+export type {Realm} from 'puppeteer-core/internal/api/Realm.js';
 export type {JSONSchema7, JSONSchema7Definition} from 'json-schema';
+
 export {
   resolveDefaultUserDataDir,
   detectBrowserPlatform,
   Browser as BrowserEnum,
   type ChromeReleaseChannel as BrowsersChromeReleaseChannel,
 } from '@puppeteer/browsers';
+export {encode as toonEncode} from '@toon-format/toon';
 
 import {
   snapshot as snapshotImpl,

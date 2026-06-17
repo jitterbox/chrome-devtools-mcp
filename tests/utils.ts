@@ -18,14 +18,23 @@ import type {
   HTTPResponse,
   LaunchOptions,
   Page,
+  Target,
 } from 'puppeteer-core';
 import sinon from 'sinon';
 
 import type {ParsedArguments} from '../src/bin/chrome-devtools-mcp-cli-options.js';
 import {McpContext} from '../src/McpContext.js';
 import {McpResponse} from '../src/McpResponse.js';
-import {stableIdSymbol} from '../src/PageCollector.js';
+import {TextSnapshot} from '../src/TextSnapshot.js';
 import {DevTools} from '../src/third_party/index.js';
+import {stableIdSymbol} from '../src/utils/id.js';
+
+export function assertNoServiceWorkerReported(targets: Target[], id: string) {
+  const target = targets.find(target => {
+    return target.url().includes(id) && target.type() === 'service_worker';
+  });
+  assert(target === undefined);
+}
 
 export function getTextContent(
   content: CallToolResult['content'][number],
@@ -64,6 +73,9 @@ export async function withBrowser(
     debug?: boolean;
     autoOpenDevTools?: boolean;
     executablePath?: string;
+    args?: string[];
+    blockedUrlPattern?: string[];
+    allowedUrlPattern?: string[];
   } = {},
 ) {
   const launchOptions: LaunchOptions = {
@@ -74,8 +86,10 @@ export async function withBrowser(
     devtools: options.autoOpenDevTools ?? false,
     pipe: true,
     handleDevToolsAsPage: true,
-    args: ['--screen-info={3840x2160}'],
+    args: [...(options.args || []), '--screen-info={3840x2160}'],
     enableExtensions: true,
+    blocklist: options.blockedUrlPattern,
+    allowlist: options.allowedUrlPattern,
   };
   const key = JSON.stringify(launchOptions);
 
@@ -104,10 +118,14 @@ export async function withMcpContext(
     autoOpenDevTools?: boolean;
     performanceCrux?: boolean;
     executablePath?: string;
+    args?: string[];
+    blockedUrlPattern?: string[];
+    allowedUrlPattern?: string[];
   } = {},
   args: ParsedArguments = {} as ParsedArguments,
 ) {
   await withBrowser(async browser => {
+    TextSnapshot.resetCounter();
     const response = new McpResponse(args);
     if (context) {
       context.dispose();
@@ -118,6 +136,10 @@ export async function withMcpContext(
       {
         experimentalDevToolsDebugging: false,
         performanceCrux: options.performanceCrux ?? true,
+        hasNetworkBlockOrAllowlist: Boolean(
+          (options.blockedUrlPattern && options.blockedUrlPattern.length > 0) ||
+          (options.allowedUrlPattern && options.allowedUrlPattern.length > 0),
+        ),
       },
       Locator,
     );
@@ -275,6 +297,10 @@ export function stabilizeResponseOutput(text: unknown) {
   const acceptLanguageRegEx = /accept-language:.*\n/g;
   output = output.replaceAll(acceptLanguageRegEx, 'accept-language:<lang>\n');
 
+  // Stabilize URL-encoded file paths
+  const fileUriRegEx = /file%3A%2F%2F%2F[^)\n]+/g;
+  output = output.replaceAll(fileUriRegEx, '<file-path>');
+
   return output;
 }
 
@@ -342,9 +368,16 @@ export const CLI_PATH = path.resolve('build/src/bin/chrome-devtools.js');
 
 export async function runCli(
   args: string[],
+  sessionId?: string,
 ): Promise<{status: number | null; stdout: string; stderr: string}> {
   return new Promise((resolve, reject) => {
-    const child = spawn('node', [CLI_PATH, ...args]);
+    const finalArgs = [...args];
+    if (sessionId) {
+      finalArgs.push('--sessionId', sessionId);
+    }
+    const child = spawn('node', [CLI_PATH, ...finalArgs], {
+      env: process.env,
+    });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', chunk => {
@@ -360,18 +393,35 @@ export async function runCli(
   });
 }
 
-export async function assertDaemonIsNotRunning() {
-  const result = await runCli(['status']);
+export async function assertDaemonIsNotRunning(sessionId?: string) {
+  const result = await runCli(['status'], sessionId);
   assert.strictEqual(
     result.stdout,
     'chrome-devtools-mcp daemon is not running.\n',
   );
 }
 
-export async function assertDaemonIsRunning() {
-  const result = await runCli(['status']);
+export async function assertDaemonIsRunning(sessionId?: string) {
+  const result = await runCli(['status'], sessionId);
   assert.ok(
     result.stdout.startsWith('chrome-devtools-mcp daemon is running.\n'),
     'chrome-devtools-mcp daemon is not running',
   );
+}
+
+export async function waitExecutionFor(
+  func: () => Promise<void>,
+  timeout: number,
+) {
+  const start = Date.now();
+  while (Date.now() - start < 10000) {
+    try {
+      await func();
+      return;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 100)); // wait and retry
+    }
+  }
+
+  throw new Error(`Timeout of ${timeout} reached.`);
 }

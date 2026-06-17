@@ -17,13 +17,14 @@ export type Evaluatable = Page | Frame | WebWorker;
 export const evaluateScript = defineTool(cliArgs => {
   return {
     name: 'evaluate_script',
-    description: `Evaluate a JavaScript function inside the currently selected page. Returns the response as JSON,
+    description: `Evaluate a JavaScript function inside the currently selected page${cliArgs?.categoryExtensions ? ' or service worker' : ''}. Returns the response as JSON,
 so returned values have to be JSON-serializable.`,
     annotations: {
       category: ToolCategory.DEBUGGING,
       readOnlyHint: false,
     },
     schema: {
+      ...(cliArgs?.experimentalPageIdRouting ? pageIdSchema : {}),
       function: zod.string().describe(
         `A JavaScript function declaration to be executed by the tool in the currently selected page.
 Example without arguments: \`() => {
@@ -46,24 +47,39 @@ Example with arguments: \`(el) => {
         )
         .optional()
         .describe(`An optional list of arguments to pass to the function.`),
-      ...(cliArgs?.experimentalPageIdRouting ? pageIdSchema : {}),
+      filePath: zod
+        .string()
+        .optional()
+        .describe(
+          'The absolute or relative path to a file to save the script output to. If omitted, the output is returned inline.',
+        ),
+      dialogAction: zod
+        .string()
+        .optional()
+        .describe(
+          'Handle dialogs while execution. "accept", "dismiss", or string for response of window.prompt. Defaults to accept.',
+        ),
       ...(cliArgs?.categoryExtensions
         ? {
             serviceWorkerId: zod
               .string()
               .optional()
               .describe(
-                `An optional service worker id to evaluate the script in.`,
+                `The optional service worker id to evaluate the script in. If provided, 'pageId' should be omitted. Note: 'args' (element UIDs) cannot be used when evaluating in a service worker.`,
               ),
           }
         : {}),
     },
+    blockedByDialog: true,
+    verifyFilesSchema: ['filePath'],
     handler: async (request, response, context) => {
       const {
         serviceWorkerId,
         args: uidArgs,
         function: fnString,
         pageId,
+        dialogAction,
+        filePath,
       } = request.params;
 
       if (cliArgs?.categoryExtensions && serviceWorkerId) {
@@ -77,11 +93,18 @@ Example with arguments: \`(el) => {
         }
 
         const worker = await getWebWorker(context, serviceWorkerId);
-        await context
+        const result = await context
           .getSelectedMcpPage()
-          .waitForEventsAfterAction(async () => {
-            await performEvaluation(worker, fnString, [], response);
-          });
+          .waitForEventsAfterAction(
+            async () => {
+              await performEvaluation(worker, fnString, [], response, {
+                filePath,
+                context,
+              });
+            },
+            {handleDialog: dialogAction ?? 'accept'},
+          );
+        response.attachWaitForResult(result);
         return;
       }
 
@@ -101,9 +124,16 @@ Example with arguments: \`(el) => {
 
         const evaluatable = await getPageOrFrame(page, frames);
 
-        await mcpPage.waitForEventsAfterAction(async () => {
-          await performEvaluation(evaluatable, fnString, args, response);
-        });
+        const result = await mcpPage.waitForEventsAfterAction(
+          async () => {
+            await performEvaluation(evaluatable, fnString, args, response, {
+              filePath,
+              context,
+            });
+          },
+          {handleDialog: dialogAction ?? 'accept'},
+        );
+        response.attachWaitForResult(result);
       } finally {
         void Promise.allSettled(args.map(arg => arg.dispose()));
       }
@@ -116,6 +146,7 @@ const performEvaluation = async (
   fnString: string,
   args: Array<JSHandle<unknown>>,
   response: Response,
+  options?: {filePath: string; context: Context},
 ) => {
   const fn = await evaluatable.evaluateHandle(`(${fnString})`);
   try {
@@ -127,10 +158,22 @@ const performEvaluation = async (
       fn,
       ...args,
     );
-    response.appendResponseLine('Script ran on page and returned:');
-    response.appendResponseLine('```json');
-    response.appendResponseLine(`${result}`);
-    response.appendResponseLine('```');
+    if (options?.filePath) {
+      const data = new TextEncoder().encode(result ?? 'undefined');
+      const {filename} = await options.context.saveFile(
+        data,
+        options.filePath,
+        '.json',
+      );
+      response.appendResponseLine(
+        `Script ran on page. Output saved to ${filename}.`,
+      );
+    } else {
+      response.appendResponseLine('Script ran on page and returned:');
+      response.appendResponseLine('```json');
+      response.appendResponseLine(`${result}`);
+      response.appendResponseLine('```');
+    }
   } finally {
     void fn.dispose();
   }

@@ -5,6 +5,9 @@
  */
 
 import assert from 'node:assert';
+import crypto from 'node:crypto';
+import {existsSync, rmSync} from 'node:fs';
+import {dirname} from 'node:path';
 import {describe, it, afterEach, beforeEach} from 'node:test';
 
 import {
@@ -16,39 +19,57 @@ import {isDaemonRunning} from '../../src/daemon/utils.js';
 
 describe('daemon client', () => {
   describe('start/stop', () => {
+    let sessionId: string;
+
     beforeEach(async () => {
-      await stopDaemon();
+      sessionId = crypto.randomUUID();
+      await stopDaemon(sessionId);
     });
 
     afterEach(async () => {
-      await stopDaemon();
+      await stopDaemon(sessionId);
     });
 
     it('should start and stop daemon', async () => {
-      assert.ok(!isDaemonRunning(), 'Daemon should not be running initially');
+      assert.ok(
+        !isDaemonRunning(sessionId),
+        'Daemon should not be running initially',
+      );
 
-      await startDaemon();
-      assert.ok(isDaemonRunning(), 'Daemon should be running after start');
+      await startDaemon([], sessionId);
+      assert.ok(
+        isDaemonRunning(sessionId),
+        'Daemon should be running after start',
+      );
 
-      await stopDaemon();
-      assert.ok(!isDaemonRunning(), 'Daemon should not be running after stop');
+      await stopDaemon(sessionId);
+      assert.ok(
+        !isDaemonRunning(sessionId),
+        'Daemon should not be running after stop',
+      );
     });
 
     it('should handle starting daemon when already running', async () => {
-      await startDaemon();
-      assert.ok(isDaemonRunning(), 'Daemon should be running');
+      await startDaemon([], sessionId);
+      assert.ok(isDaemonRunning(sessionId), 'Daemon should be running');
 
       // Starting again should be a no-op
-      await startDaemon();
-      assert.ok(isDaemonRunning(), 'Daemon should still be running');
+      await startDaemon([], sessionId);
+      assert.ok(isDaemonRunning(sessionId), 'Daemon should still be running');
     });
 
     it('should handle stopping daemon when not running', async () => {
-      assert.ok(!isDaemonRunning(), 'Daemon should not be running initially');
+      assert.ok(
+        !isDaemonRunning(sessionId),
+        'Daemon should not be running initially',
+      );
 
       // Stopping when not running should be a no-op
-      await stopDaemon();
-      assert.ok(!isDaemonRunning(), 'Daemon should still not be running');
+      await stopDaemon(sessionId);
+      assert.ok(
+        !isDaemonRunning(sessionId),
+        'Daemon should still not be running',
+      );
     });
   });
 
@@ -106,6 +127,58 @@ describe('daemon client', () => {
       };
       const response = await handleResponse(unsupportedContentResponse, 'md');
       assert.ok(response.includes('.png'));
+    });
+
+    it('includes saved image file paths in structured JSON responses', async () => {
+      const imageContentResponse = {
+        content: [
+          {
+            type: 'text' as const,
+            text: 'Took a screenshot.',
+          },
+          {
+            type: 'image' as const,
+            data: Buffer.from('image data').toString('base64'),
+            mimeType: 'image/png',
+          },
+        ],
+        structuredContent: {
+          message: 'Took a screenshot.',
+        },
+      };
+      let filePath: string | undefined;
+      try {
+        const response = await handleResponse(imageContentResponse, 'json');
+        const parsed = JSON.parse(response) as {
+          message: string;
+          images: Array<{filePath: string; mimeType: string}>;
+        };
+        assert.strictEqual(parsed.message, 'Took a screenshot.');
+        assert.strictEqual(parsed.images.length, 1);
+        assert.strictEqual(parsed.images[0].mimeType, 'image/png');
+        filePath = parsed.images[0].filePath;
+        assert.ok(filePath.endsWith('.png'));
+        assert.ok(existsSync(filePath));
+      } finally {
+        if (filePath) {
+          rmSync(dirname(filePath), {recursive: true, force: true});
+        }
+      }
+    });
+
+    it('uses the webp extension for WebP images', async () => {
+      const webpContentResponse = {
+        content: [
+          {
+            type: 'image' as const,
+            data: 'base64data',
+            mimeType: 'image/webp',
+          },
+        ],
+        structuredContent: {},
+      };
+      const response = await handleResponse(webpContentResponse, 'md');
+      assert.ok(response.includes('.webp'));
     });
   });
 });

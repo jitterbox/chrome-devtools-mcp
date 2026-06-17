@@ -11,7 +11,8 @@ import {
   transformArgType,
   getZodType,
   PARAM_BLOCKLIST,
-} from './ClearcutLogger.js';
+  stripUnderscoreBeforeNumber,
+} from './transformation.js';
 
 /**
  * Validates that all values in an enum are of the homogeneous primitive type.
@@ -62,10 +63,9 @@ export function applyToExistingMetrics(
   });
 }
 
-function applyToExisting<T extends {name: string; isDeprecated?: boolean}>(
-  existing: T[],
-  update: T[],
-): T[] {
+export function applyToExisting<
+  T extends {name: string; isDeprecated?: boolean},
+>(existing: T[], update: T[]): T[] {
   const existingNames = new Set(existing.map(item => item.name));
   const updatedNames = new Set(update.map(item => item.name));
 
@@ -119,7 +119,7 @@ export function generateToolMetrics(tools: ToolDefinition[]): ToolMetric[] {
     }
 
     return {
-      name: tool.name,
+      name: stripUnderscoreBeforeNumber(tool.name),
       args,
     };
   });

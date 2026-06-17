@@ -5,7 +5,7 @@
  */
 
 import {logger} from './logger.js';
-import type {Page, Protocol, CdpPage} from './third_party/index.js';
+import type {Page, Protocol, CdpPage, Dialog} from './third_party/index.js';
 import type {PredefinedNetworkConditions} from './third_party/index.js';
 
 export class WaitForHelper {
@@ -15,6 +15,9 @@ export class WaitForHelper {
   #stableDomFor: number;
   #expectNavigationIn: number;
   #navigationTimeout: number;
+
+  #dialogOpened = false;
+  #initialUrl: string;
 
   constructor(
     page: Page,
@@ -26,6 +29,7 @@ export class WaitForHelper {
     this.#expectNavigationIn = 100 * cpuTimeoutMultiplier;
     this.#navigationTimeout = 3000 * networkTimeoutMultiplier;
     this.#page = page as unknown as CdpPage;
+    this.#initialUrl = page.url();
   }
 
   /**
@@ -126,8 +130,28 @@ export class WaitForHelper {
 
   async waitForEventsAfterAction(
     action: () => Promise<unknown>,
-    options?: {timeout?: number},
-  ): Promise<void> {
+    options?: {timeout?: number; handleDialog?: 'accept' | 'dismiss' | string},
+  ): Promise<WaitForEventsResult> {
+    if (this.#abortController.signal.aborted) {
+      throw new Error("Can't re-use a WaitForHelper");
+    }
+    if (options?.handleDialog) {
+      const dialogHandler = (dialog: Pick<Dialog, 'accept' | 'dismiss'>) => {
+        this.#dialogOpened = true;
+        if (options.handleDialog === 'dismiss') {
+          void dialog.dismiss();
+        } else if (options.handleDialog === 'accept') {
+          void dialog.accept();
+        } else {
+          void dialog.accept(options.handleDialog);
+        }
+      };
+      this.#page.on('dialog', dialogHandler);
+      this.#abortController.signal.addEventListener('abort', () => {
+        this.#page.off('dialog', dialogHandler);
+      });
+    }
+
     const navigationFinished = this.waitForNavigationStarted()
       .then(navigationStated => {
         if (navigationStated) {
@@ -138,7 +162,7 @@ export class WaitForHelper {
         }
         return;
       })
-      .catch(error => logger(error));
+      .catch(error => logger?.(error));
 
     try {
       await action();
@@ -151,15 +175,38 @@ export class WaitForHelper {
     try {
       await navigationFinished;
 
+      if (this.#dialogOpened) {
+        return this.#getResult();
+      }
+
       // Wait for stable dom after navigation so we execute in
       // the correct context
       await this.waitForStableDom();
     } catch (error) {
-      logger(error);
+      logger?.(error);
     } finally {
       this.#abortController.abort();
     }
+
+    return this.#getResult();
   }
+
+  #getResult(): WaitForEventsResult {
+    const urlAfterAction = this.#page.url();
+    return {
+      ...(urlAfterAction !== this.#initialUrl
+        ? {navigatedToUrl: urlAfterAction}
+        : {}),
+    };
+  }
+}
+
+export interface WaitForEventsResult {
+  /**
+   * The URL the page navigated to during the action, if a navigation
+   * occurred.
+   */
+  navigatedToUrl?: string;
 }
 
 export function getNetworkMultiplierFromString(

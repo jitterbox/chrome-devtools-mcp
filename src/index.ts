@@ -12,21 +12,22 @@ import {ensureBrowserConnected, ensureBrowserLaunched} from './browser.js';
 import {loadIssueDescriptions} from './issue-descriptions.js';
 import {logger} from './logger.js';
 import {McpContext} from './McpContext.js';
-import {McpResponse} from './McpResponse.js';
 import {Mutex} from './Mutex.js';
-import {SlimMcpResponse} from './SlimMcpResponse.js';
 import {ClearcutLogger} from './telemetry/ClearcutLogger.js';
-import {bucketizeLatency} from './telemetry/metricUtils.js';
+import {FilePersistence} from './telemetry/persistence.js';
 import {
   McpServer,
   type CallToolResult,
   SetLevelRequestSchema,
+  ListRootsResultSchema,
+  RootsListChangedNotificationSchema,
 } from './third_party/index.js';
-import {ToolCategory} from './tools/categories.js';
+import {ToolHandler} from './ToolHandler.js';
 import type {DefinedPageTool, ToolDefinition} from './tools/ToolDefinition.js';
-import {pageIdSchema} from './tools/ToolDefinition.js';
 import {createTools} from './tools/tools.js';
 import {VERSION} from './version.js';
+
+export {buildFlag} from './ToolHandler.js';
 
 export async function createMcpServer(
   serverArgs: ReturnType<typeof parseArguments>,
@@ -34,9 +35,9 @@ export async function createMcpServer(
     logFile?: fs.WriteStream;
   },
 ) {
-  let clearcutLogger: ClearcutLogger | undefined;
   if (serverArgs.usageStatistics) {
-    clearcutLogger = new ClearcutLogger({
+    ClearcutLogger.initialize({
+      persistence: new FilePersistence(),
       logFile: serverArgs.logFile,
       appVersion: VERSION,
       clearcutEndpoint: serverArgs.clearcutEndpoint,
@@ -57,10 +58,34 @@ export async function createMcpServer(
     return {};
   });
 
+  const updateRoots = async () => {
+    if (!server.server.getClientCapabilities()?.roots) {
+      return;
+    }
+    try {
+      const roots = await server.server.request(
+        {method: 'roots/list'},
+        ListRootsResultSchema,
+      );
+      context?.setRoots(roots.roots);
+    } catch (e) {
+      logger?.('Failed to list roots', e);
+    }
+  };
+
   server.server.oninitialized = () => {
     const clientName = server.server.getClientVersion()?.name;
     if (clientName) {
-      clearcutLogger?.setClientName(clientName);
+      ClearcutLogger.get()?.setClientName(clientName);
+    }
+    if (server.server.getClientCapabilities()?.roots) {
+      void updateRoots();
+      server.server.setNotificationHandler(
+        RootsListChangedNotificationSchema,
+        () => {
+          void updateRoots();
+        },
+      );
     }
   };
 
@@ -74,6 +99,13 @@ export async function createMcpServer(
       chromeArgs.push(`--proxy-server=${serverArgs.proxyServer}`);
     }
     const devtools = serverArgs.experimentalDevtools ?? false;
+    const blocklist = serverArgs.blockedUrlPattern
+      ? serverArgs.blockedUrlPattern.map(String)
+      : undefined;
+    const allowlist = serverArgs.allowedUrlPattern
+      ? serverArgs.allowedUrlPattern.map(String)
+      : undefined;
+
     const browser =
       serverArgs.browserUrl || serverArgs.wsEndpoint || serverArgs.autoConnect
         ? await ensureBrowserConnected({
@@ -86,6 +118,8 @@ export async function createMcpServer(
               : undefined,
             userDataDir: serverArgs.userDataDir,
             devtools,
+            blocklist,
+            allowlist,
           })
         : await ensureBrowserLaunched({
             headless: serverArgs.headless,
@@ -101,6 +135,8 @@ export async function createMcpServer(
             devtools,
             enableExtensions: serverArgs.categoryExtensions,
             viaCli: serverArgs.viaCli,
+            blocklist,
+            allowlist,
           });
 
     if (context?.browser !== browser) {
@@ -108,7 +144,12 @@ export async function createMcpServer(
         experimentalDevToolsDebugging: devtools,
         experimentalIncludeAllPages: serverArgs.experimentalIncludeAllPages,
         performanceCrux: serverArgs.performanceCrux,
+        hasNetworkBlockOrAllowlist: Boolean(
+          (blocklist && blocklist.length > 0) ||
+          (allowlist && allowlist.length > 0),
+        ),
       });
+      await updateRoots();
     }
     return context;
   }
@@ -116,149 +157,26 @@ export async function createMcpServer(
   const toolMutex = new Mutex();
 
   function registerTool(tool: ToolDefinition | DefinedPageTool): void {
-    if (
-      tool.annotations.category === ToolCategory.EMULATION &&
-      serverArgs.categoryEmulation === false
-    ) {
+    const toolHandler = new ToolHandler(
+      tool,
+      serverArgs,
+      getContext,
+      toolMutex,
+    );
+
+    if (!toolHandler.shouldRegister) {
       return;
     }
-    if (
-      tool.annotations.category === ToolCategory.PERFORMANCE &&
-      serverArgs.categoryPerformance === false
-    ) {
-      return;
-    }
-    if (
-      tool.annotations.category === ToolCategory.NETWORK &&
-      serverArgs.categoryNetwork === false
-    ) {
-      return;
-    }
-    if (
-      tool.annotations.category === ToolCategory.EXTENSIONS &&
-      !serverArgs.categoryExtensions
-    ) {
-      return;
-    }
-    if (
-      tool.annotations.category === ToolCategory.IN_PAGE &&
-      !serverArgs.categoryInPageTools
-    ) {
-      return;
-    }
-    if (
-      tool.annotations.conditions?.includes('computerVision') &&
-      !serverArgs.experimentalVision
-    ) {
-      return;
-    }
-    if (
-      tool.annotations.conditions?.includes('experimentalInteropTools') &&
-      !serverArgs.experimentalInteropTools
-    ) {
-      return;
-    }
-    if (
-      tool.annotations.conditions?.includes('screencast') &&
-      !serverArgs.experimentalScreencast
-    ) {
-      return;
-    }
-    const schema =
-      'pageScoped' in tool &&
-      tool.pageScoped &&
-      serverArgs.experimentalPageIdRouting &&
-      !serverArgs.slim
-        ? {...tool.schema, ...pageIdSchema}
-        : tool.schema;
 
     server.registerTool(
       tool.name,
       {
         description: tool.description,
-        inputSchema: schema,
+        inputSchema: toolHandler.registeredInputSchema,
         annotations: tool.annotations,
       },
       async (params): Promise<CallToolResult> => {
-        const guard = await toolMutex.acquire();
-        const startTime = Date.now();
-        let success = false;
-        try {
-          logger(`${tool.name} request: ${JSON.stringify(params, null, '  ')}`);
-          const context = await getContext();
-          logger(`${tool.name} context: resolved`);
-          await context.detectOpenDevToolsWindows();
-          const response = serverArgs.slim
-            ? new SlimMcpResponse(serverArgs)
-            : new McpResponse(serverArgs);
-
-          response.setRedactNetworkHeaders(serverArgs.redactNetworkHeaders);
-          if ('pageScoped' in tool && tool.pageScoped) {
-            const page =
-              serverArgs.experimentalPageIdRouting &&
-              params.pageId &&
-              !serverArgs.slim
-                ? context.getPageById(params.pageId)
-                : context.getSelectedMcpPage();
-            response.setPage(page);
-            await tool.handler(
-              {
-                params,
-                page,
-              },
-              response,
-              context,
-            );
-          } else {
-            await tool.handler(
-              // @ts-expect-error types do not match.
-              {
-                params,
-              },
-              response,
-              context,
-            );
-          }
-          const {content, structuredContent} = await response.handle(
-            tool.name,
-            context,
-          );
-          const result: CallToolResult & {
-            structuredContent?: Record<string, unknown>;
-          } = {
-            content,
-          };
-          success = true;
-          if (serverArgs.experimentalStructuredContent) {
-            result.structuredContent = structuredContent as Record<
-              string,
-              unknown
-            >;
-          }
-          return result;
-        } catch (err) {
-          logger(`${tool.name} error:`, err, err?.stack);
-          let errorText = err && 'message' in err ? err.message : String(err);
-          if ('cause' in err && err.cause) {
-            errorText += `\nCause: ${err.cause.message}`;
-          }
-          return {
-            content: [
-              {
-                type: 'text',
-                text: errorText,
-              },
-            ],
-            isError: true,
-          };
-        } finally {
-          void clearcutLogger?.logToolInvocation({
-            toolName: tool.name,
-            success,
-            latencyMs: bucketizeLatency(Date.now() - startTime),
-          });
-          guard.dispose();
-        }
+        return await toolHandler.handle(params);
       },
     );
   }
@@ -270,7 +188,7 @@ export async function createMcpServer(
 
   await loadIssueDescriptions();
 
-  return {server, clearcutLogger};
+  return {server};
 }
 
 export const logDisclaimers = (args: ReturnType<typeof parseArguments>) => {
