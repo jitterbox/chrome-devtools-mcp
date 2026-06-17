@@ -271,6 +271,12 @@ export type Context = Readonly<{
     filePath: string,
     nodeId: number,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
+  getNodeIdFromHandle(
+    handle: ElementHandle<Element>,
+    page: Page,
+  ): Promise<number>;
+  ensureCssDomainEnabledForPage(page: Page): Promise<void>;
+  ensureDomDomainEnabledForPage(page: Page): Promise<void>;
 }>;
 
 /**

@@ -39,6 +39,7 @@ import {
   type Extension,
   type Root,
   type DevTools,
+  type ElementHandle,
 } from './third_party/index.js';
 import {listPages} from './tools/pages.js';
 import {CLOSE_PAGE_ERROR} from './tools/ToolDefinition.js';
@@ -101,6 +102,8 @@ export class McpContext implements Context {
   #nextExtensionServiceWorkerId = 1;
 
   #traceResults: TraceResult[] = [];
+  #cssDomainEnabled = new WeakSet<Page>();
+  #domDomainEnabled = new WeakSet<Page>();
 
   #locatorClass: typeof Locator;
   #options: McpContextOptions;
@@ -981,5 +984,63 @@ export class McpContext implements Context {
     nodeId: number,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange> {
     return await this.#heapSnapshotManager.getEdges(filePath, nodeId);
+  }
+
+  async ensureCssDomainEnabledForPage(page: Page): Promise<void> {
+    if (this.#cssDomainEnabled.has(page)) {
+      return;
+    }
+    // @ts-expect-error internal API
+    const client = page._client();
+    await client.send('CSS.enable');
+    this.#cssDomainEnabled.add(page);
+  }
+
+  async ensureDomDomainEnabledForPage(page: Page): Promise<void> {
+    if (this.#domDomainEnabled.has(page)) {
+      return;
+    }
+    // @ts-expect-error internal API
+    const client = page._client();
+    await client.send('DOM.enable');
+    try {
+      await client.send('DOM.getDocument', {depth: 1});
+    } catch {
+      // ignore
+    }
+    this.#domDomainEnabled.add(page);
+  }
+
+  async getNodeIdFromHandle(
+    handle: ElementHandle<Element>,
+    page: Page,
+  ): Promise<number> {
+    await this.ensureDomDomainEnabledForPage(page);
+    // @ts-expect-error internal API
+    const client = page._client();
+    const objectId: string | undefined = handle.remoteObject().objectId;
+    if (!objectId) {
+      throw new Error('Unable to resolve CDP objectId for element handle');
+    }
+    try {
+      const {nodeId} = await client.send('DOM.requestNode', {objectId});
+      return nodeId as number;
+    } catch {
+      const {node} = await client.send('DOM.describeNode', {objectId});
+      if (node?.nodeId) {
+        return node.nodeId as number;
+      }
+      if (node?.backendNodeId) {
+        const {nodeIds} = await client.send(
+          'DOM.pushNodesByBackendIdsToFrontend',
+          {backendNodeIds: [node.backendNodeId]},
+        );
+        const first = (nodeIds as number[])[0];
+        if (first) {
+          return first;
+        }
+      }
+      throw new Error('Unable to resolve DOM.NodeId for element');
+    }
   }
 }
