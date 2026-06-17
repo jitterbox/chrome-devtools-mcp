@@ -2,30 +2,37 @@
 
 Audience: developers and AI agents using **this fork** (`jitterbox/chrome-devtools-mcp`).
 
-Scope: **tool-level changes only** — new MCP tools, how they work, and what
-supporting context they rely on. Does not cover CLI, build, telemetry, or other
-repo changes.
+Scope: **tool-level changes only** — new MCP tools, how they work, file-based
+golden snapshots, and what supporting context they rely on. Does not cover CLI,
+build, telemetry, or other repo changes.
 
-**Branch:** `feat-computed-css` (not merged to `main` as of this writing).
+**Status:** merged to this fork's `main` (not upstream).
 
 **Upstream baseline:** `ChromeDevTools/chrome-devtools-mcp` `main`.
+
+**Fork-only:** do not open PRs against upstream with these changes unless you
+intend to contribute them there separately.
 
 ---
 
 ## Summary
 
 This fork adds **8 new Debugging tools** for computed CSS, box model geometry,
-visibility diagnosis, batch queries, diffs, named baselines, and DevTools
-highlights. They live in a new module:
+visibility diagnosis, batch queries, diffs, named baselines, DevTools
+highlights, and **file-based JSON golden snapshots**. They live in:
 
 - `src/tools/styles.ts` — registered in `src/tools/tools.ts`
 
 All new tools:
 
 - Target elements by **`uid`** from [`take_snapshot`](tool-reference.md#take_snapshot)
-- Are **`readOnlyHint: true`** (Debugging category)
-- Are **not** included in **slim mode** (`--slim`)
 - Use Chrome DevTools Protocol (CDP) via Puppeteer internals
+- Are **not** included in **slim mode** (`--slim`)
+
+**Read-only hints:** seven tools are `readOnlyHint: true`. `save_computed_styles_snapshot`
+is `readOnlyHint: false` because it can write JSON to `filePath`.
+
+**Debugging category tool count:** upstream 6 → fork 14 (+8).
 
 ---
 
@@ -39,9 +46,11 @@ All new tools:
    instead of scraping `getComputedStyle` in page JS.
 3. **Use property filters.** Pass `properties: ["color", "display", …]` to
    shrink payloads when checking specific tokens or layout rules.
-4. **Named snapshots are in-memory per MCP session.** `save_computed_styles_snapshot`
-   stores baselines in a `WeakMap` keyed by MCP context — they do not survive
-   server restarts.
+4. **Choose the right persistence layer:**
+   - **In-memory** (`name` on save) — same MCP session only; stored in a
+     server-side `WeakMap`, not in the browser and not in `localStorage`.
+   - **On disk** (`filePath` / `baselineFilePath`) — golden files for CI,
+     cross-run before/after, and hundreds of E2E tests (see below).
 
 ---
 
@@ -228,8 +237,9 @@ Compare a **live** element against an in-memory snapshot or a JSON baseline file
 | `properties` | no | Filter diff |
 | `compareGeometry` | no | Compare border rects |
 
-\* At least one of `name` or `baselineFilePath` is required. `baselineFilePath`
-takes precedence for loading the baseline (no in-memory store needed).
+\* At least one of `name` or `baselineFilePath` is required. When
+`baselineFilePath` is set, the baseline is loaded from disk — no prior in-memory
+`save` in the same session is required.
 
 **Response fields:**
 
@@ -346,19 +356,202 @@ take_snapshot → highlight_elements_for_styles(uids) → take_screenshot
 
 ---
 
-## Existing tools: description-only updates
+## Large-scale before/after E2E (hundreds of tests, file-based JSON)
 
-The fork also rewrites **tool descriptions** (no handler/schema changes) across
-existing modules so agents pick the right tool faster — e.g. `click` now says to
-prefer snapshot `uid` over guessing selectors; `take_snapshot` stresses using
-the latest snapshot after DOM changes.
+Use **on-disk golden files** when you have many E2E scenarios and need to
+compare a **before** build against an **after** build across separate CI runs,
+branches, or refactors. Nothing is stored in browser `localStorage` — baselines
+live as JSON files on the test runner filesystem (or in git).
 
-Affected modules: `console`, `emulation`, `extensions`, `input`, `lighthouse`,
-`memory`, `network`, `pages`, `performance`, `screencast`, `screenshot`,
-`script`, `snapshot`, `slim/tools`, and generated `docs/tool-reference.md`.
+### Why file-based for scale
 
-If you need exact upstream-vs-fork description text, diff
-`upstream/main...feat-computed-css` on those files.
+| Approach | Good for | Limitation |
+|----------|----------|------------|
+| In-memory `name` | Same MCP session, quick navigate/reload | Lost when MCP server exits |
+| `filePath` / `baselineFilePath` | Hundreds of tests, CI golden files, before/after across runs | You manage directory layout |
+| `diff_computed_styles` (live A vs B) | Two elements on one page, one session | No cross-run persistence |
+
+For hundreds of tests, **commit or archive a `before/` tree of JSON files**, run
+the suite on the **after** build, and diff each test's live state against its
+matching baseline file.
+
+### Recommended directory layout
+
+```text
+tests/
+  fixtures/
+    style-snapshots/
+      before/                    # captured from baseline branch / build
+        login-form.json
+        dashboard-header.json
+        settings-panel.json
+      after/                     # optional: capture after for offline compare
+        login-form.json
+      manifest.json              # optional: testId → uids/domPaths/properties
+```
+
+Each golden file is the schema v1 output written by `save_computed_styles_snapshot`
+with `filePath`. One file per test (or per page region) keeps failures isolated
+and diffs small.
+
+### Per-test element manifest (optional but useful at scale)
+
+Store stable selectors alongside snapshot files so scripts do not hard-code uids
+(which change every `take_snapshot`):
+
+```json
+{
+  "login-form": {
+    "url": "/login",
+    "waitFor": ["Sign in"],
+    "elements": {
+      "submitButton": { "snapshotIncludes": "button \"Sign in\"" },
+      "emailInput": { "snapshotIncludes": "textbox \"Email\"" }
+    },
+    "properties": ["color", "font-size", "display", "width", "height"]
+  }
+}
+```
+
+Your harness resolves `snapshotIncludes` → `uid` from `take_snapshot` text,
+then passes those uids to save/diff tools. Use `domPath` from the saved baseline
+when uids differ after reload (included automatically in v1 snapshots).
+
+### Phase 1 — capture "before" snapshots (baseline build)
+
+Run once on the known-good branch. One MCP client per test (or per batch) keeps
+memory flat.
+
+```text
+for each test in manifest:
+  connect MCP client
+  navigate_page(url)
+  wait_for(text)
+  take_snapshot
+  resolve uids from snapshot text
+  save_computed_styles_snapshot({
+    filePath: "tests/fixtures/style-snapshots/before/{testId}.json",
+    uids: [...],
+    properties: [...]   # keep small — only assert-on properties
+  })
+  close MCP client
+```
+
+Commit `before/*.json` to git (or upload as a CI artifact) as the regression
+baseline.
+
+**Tips for hundreds of captures:**
+
+- Always pass `properties` — unfiltered computed maps are large (100–300+ keys per
+  element). Asserting on 5–20 properties per element keeps files small.
+- Use one snapshot file per test, not one giant file for the whole suite.
+- Include `compareGeometry: true` at diff time; you do not need separate box-model
+  files because v1 snapshots already store `borderRect` and `domPath`.
+
+### Phase 2 — run "after" build and diff against baselines
+
+On the candidate build, replay the same navigation steps, then diff each element
+against its baseline file. **No in-memory save required.**
+
+```text
+for each test in manifest:
+  connect MCP client
+  navigate_page(url)
+  wait_for(text)
+  take_snapshot
+  resolve live uids
+
+  for each element in test.elements:
+    diff_computed_styles_snapshot({
+      baselineFilePath: "tests/fixtures/style-snapshots/before/{testId}.json",
+      uid: liveUid,
+      domPath: baseline.domPath,        # when uid changed after reload
+      properties: test.properties,
+      compareGeometry: true
+    })
+    assert styleChanges is empty OR changeClass is acceptable
+
+  close MCP client
+```
+
+Parse the ` ```json ` block in each tool response (see `tests/e2e.styles.test.ts`
+`extractJson`). Fail the test when `styleChanges` is non-empty or when
+`effectiveLayoutChange` is true and your test disallows layout drift.
+
+### Phase 2 alternative — capture "after" files, diff offline
+
+If you prefer not to call diff tools hundreds of times in one CI job:
+
+1. **After pass:** same as Phase 1 but write to `after/{testId}.json`.
+2. **Compare in Node:** load `before` and `after` JSON and diff `elements[*].computed`
+   (and optionally `borderRect`) in your test runner.
+
+Use MCP `diff_computed_styles_snapshot` when you want the built-in
+`changeClass` / `effectiveLayoutChange` classification and live `overlay.borderQuad`
+for debugging. Use offline JSON diff for bulk reporting or custom tolerances.
+
+### Example harness sketch (Node + MCP SDK)
+
+```javascript
+// Pseudocode — adapt to your E2E runner
+async function captureBaseline(testId, spec) {
+  await withMcpClient(async client => {
+    await call(client, 'navigate_page', { url: spec.url });
+    await call(client, 'wait_for', { text: spec.waitFor });
+    const snap = await call(client, 'take_snapshot', {});
+    const uids = resolveUids(snap, spec.elements);
+    await call(client, 'save_computed_styles_snapshot', {
+      filePath: `tests/fixtures/style-snapshots/before/${testId}.json`,
+      uids: Object.values(uids),
+      properties: spec.properties,
+    });
+  });
+}
+
+async function assertAgainstBaseline(testId, spec) {
+  await withMcpClient(async client => {
+    await call(client, 'navigate_page', { url: spec.url });
+    await call(client, 'wait_for', { text: spec.waitFor });
+    const snap = await call(client, 'take_snapshot', {});
+    const uids = resolveUids(snap, spec.elements);
+    const baseline = JSON.parse(
+      await readFile(`tests/fixtures/style-snapshots/before/${testId}.json`, 'utf8'),
+    );
+
+    for (const [key, liveUid] of Object.entries(uids)) {
+      const domPath = baseline.elements[liveUid]?.domPath
+        ?? findDomPathByManifestKey(baseline, key);
+      const diff = await call(client, 'diff_computed_styles_snapshot', {
+        baselineFilePath: `tests/fixtures/style-snapshots/before/${testId}.json`,
+        uid: liveUid,
+        domPath,
+        properties: spec.properties,
+        compareGeometry: true,
+      });
+      const result = extractJson(diff);
+      if (result.styleChanges?.length) {
+        throw new Error(`${testId}/${key}: ${JSON.stringify(result.styleChanges)}`);
+      }
+    }
+  });
+}
+```
+
+See `scripts/run-e2e-styles.js` and `tests/e2e.styles.test.ts` for working MCP
+client patterns against this fork.
+
+### Operational notes at scale
+
+- **One MCP client per test** — avoids accumulating in-memory named snapshots and
+  keeps Chrome/MCP memory predictable across hundreds of runs.
+- **Parallel workers** — safe: each worker writes/reads distinct `filePath` values;
+  no shared browser storage involved.
+- **Updating baselines** — re-run Phase 1 on the new good build and replace
+  `before/*.json` (or bump a manifest version).
+- **Flaky geometry** — use `properties` without layout keys first; enable
+  `compareGeometry` only where pixel layout is part of the contract.
+- **Viewport consistency** — v1 `meta` records viewport and DPR; consider asserting
+  `meta.viewportWidth` / `meta.dpr` match before comparing styles.
 
 ---
 
@@ -371,8 +564,18 @@ If you need exact upstream-vs-fork description text, diff
 | `get_visibility` | Element missing from view — why? |
 | `get_computed_styles_batch` | Many elements, same property subset |
 | `diff_computed_styles` | Two live elements differ? |
-| `save_computed_styles_snapshot` | Capture baseline before a change |
-| `diff_computed_styles_snapshot` | Live state vs saved baseline |
+| `save_computed_styles_snapshot` | Capture baseline (`name` and/or `filePath`) |
+| `diff_computed_styles_snapshot` | Live state vs in-memory or `baselineFilePath` |
 | `highlight_elements_for_styles` | DevTools highlight + quad coords |
 
-**Debugging category tool count:** upstream 6 → fork 14 (+8).
+### Files added on this fork (vs upstream)
+
+| Path | Role |
+|------|------|
+| `src/tools/styles.ts` | All 8 tools + file I/O helpers |
+| `src/McpContext.ts` | CDP CSS/DOM/node-id helpers |
+| `src/tools/tools.ts` | Registers `stylesTools` |
+| `tests/tools/styles.test.ts` | Unit tests incl. file save/diff |
+| `tests/e2e.styles.test.ts` | End-to-end MCP flow |
+| `scripts/run-e2e-styles.js` | Manual E2E styles harness |
+| `docs/fork-tool-changes.md` | This document |
