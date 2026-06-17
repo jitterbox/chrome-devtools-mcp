@@ -9,22 +9,16 @@ import * as path from 'node:path';
 
 const BUILD_DIR = path.join(process.cwd(), 'build');
 
-/**
- * Writes content to a file.
- * @param filePath The path to the file.
- * @param content The content to write.
- */
-function writeFile(filePath: string, content: string): void {
+function writeFile(filePath, content) {
   fs.writeFileSync(filePath, content, 'utf-8');
 }
 
-function main(): void {
+function main() {
   const devtoolsThirdPartyPath =
     'node_modules/chrome-devtools-frontend/front_end/third_party';
   const devtoolsFrontEndCorePath =
     'node_modules/chrome-devtools-frontend/front_end/core';
 
-  // Create i18n mock
   const i18nDir = path.join(BUILD_DIR, devtoolsFrontEndCorePath, 'i18n');
   fs.mkdirSync(i18nDir, {recursive: true});
   const localesFile = path.join(i18nDir, 'locales.js');
@@ -44,7 +38,6 @@ export const REMOTE_FETCH_PATTERN = '@HOST@/remote/serve_file/@VERSION@/core/i18
 export const LOCAL_FETCH_PATTERN = './locales/@LOCALE@.json';`;
   writeFile(localesFile, localesContent);
 
-  // Create codemirror.next mock.
   const codeMirrorDir = path.join(
     BUILD_DIR,
     devtoolsThirdPartyPath,
@@ -60,7 +53,6 @@ export const css = { cssLanguage: { parser: { parse: () => ({ topNode: { getChil
 `;
   writeFile(codeMirrorFile, codeMirrorContent);
 
-  // Create root mock
   const rootDir = path.join(BUILD_DIR, devtoolsFrontEndCorePath, 'root');
   fs.mkdirSync(rootDir, {recursive: true});
   const runtimeFile = path.join(rootDir, 'Runtime.js');
@@ -105,7 +97,6 @@ export const ExperimentName = {
   `;
   writeFile(runtimeFile, runtimeContent);
 
-  // Copy missing CodeMirror .mjs files that tsc ignores due to .d.mts renames
   const codemirrorDir = path.join(
     BUILD_DIR,
     devtoolsThirdPartyPath,
