@@ -9,38 +9,25 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import {logger} from './logger.js';
 import type {
   Browser,
   ChromeReleaseChannel,
   LaunchOptions,
-  Target,
 } from './third_party/index.js';
 import {puppeteer} from './third_party/index.js';
+import {logger, puppeteerLogger} from './utils/logger.js';
+import {isAllowedUrl} from './utils/url.js';
 
 let browser: Browser | undefined;
 let browserMode: 'launched' | 'connected' | undefined;
 
-function makeTargetFilter(enableExtensions = false) {
-  const ignoredPrefixes = new Set(['chrome://', 'chrome-untrusted://']);
-  if (!enableExtensions) {
-    ignoredPrefixes.add('chrome-extension://');
-  }
-
-  return function targetFilter(target: Target): boolean {
-    if (target.url() === 'chrome://newtab/') {
+export function makeTargetFilter(enableExtensions = false) {
+  return function targetFilter(target: {url(): string}): boolean {
+    const url = target.url();
+    if (!url) {
       return true;
     }
-    // Could be the only page opened in the browser.
-    if (target.url().startsWith('chrome://inspect')) {
-      return true;
-    }
-    for (const prefix of ignoredPrefixes) {
-      if (target.url().startsWith(prefix)) {
-        return false;
-      }
-    }
-    return true;
+    return isAllowedUrl(url, {categoryExtensions: enableExtensions});
   };
 }
 
@@ -66,6 +53,7 @@ export async function ensureBrowserConnected(options: {
     handleDevToolsAsPage: true,
     blocklist: options.blocklist,
     allowlist: options.allowlist,
+    logger: puppeteerLogger,
   };
 
   let autoConnect = false;
@@ -182,6 +170,45 @@ export function detectDisplay(): void {
   }
 }
 
+/**
+ * Chrome refuses to start as root unless the sandbox is explicitly disabled and
+ * only says so on its stderr. Because we launch with `pipe: true`, Puppeteer
+ * never surfaces that stderr and the failure reaches the client as an opaque
+ * `Protocol error (Target.setDiscoverTargets): Target closed`. Detect the
+ * situation and explain the way out instead. See https://crbug.com/638180.
+ *
+ * Returns `undefined` when the failure cannot be explained by running as root,
+ * including on platforms without uids and when the sandbox was already disabled
+ * through `--chrome-arg` (in which case root is not what stopped Chrome).
+ *
+ * Exported for testing.
+ */
+export function rootSandboxLaunchError(
+  error: Error,
+  args: readonly string[],
+  uid = process.getuid?.(),
+): Error | undefined {
+  if (uid !== 0) {
+    return undefined;
+  }
+  if (
+    args.some(arg => arg === '--no-sandbox' || arg.startsWith('--no-sandbox='))
+  ) {
+    return undefined;
+  }
+  return new Error(
+    `Chrome failed to start: ${error.message}\n\n` +
+      'chrome-devtools-mcp is running as root and Chrome does not start as root ' +
+      '(https://crbug.com/638180). Run chrome-devtools-mcp as a non-root user; in a ' +
+      'container, create an unprivileged user in the image and switch to it with ' +
+      "USER. For the setup that Chrome's sandbox needs, see " +
+      'https://pptr.dev/troubleshooting#setting-up-chrome-linux-sandbox.',
+    {
+      cause: error,
+    },
+  );
+}
+
 export async function launch(options: McpLaunchOptions): Promise<Browser> {
   const {channel, executablePath, headless, isolated} = options;
   const profileDirName =
@@ -206,6 +233,9 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
     ...(options.chromeArgs ?? []),
     '--hide-crash-restore-bubble',
   ];
+  if (process.env.CHROME_DEVTOOLS_MCP_TEST_NO_SANDBOX === 'true') {
+    args.push('--no-sandbox', '--disable-setuid-sandbox');
+  }
   const ignoreDefaultArgs: LaunchOptions['ignoreDefaultArgs'] =
     options.ignoreDefaultChromeArgs ?? false;
 
@@ -243,6 +273,7 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
       enableExtensions: options.enableExtensions,
       blocklist: options.blocklist,
       allowlist: options.allowlist,
+      logger: puppeteerLogger,
     });
     if (options.logFile) {
       // FIXME: we are probably subscribing too late to catch startup logs. We
@@ -269,6 +300,10 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
           cause: error,
         },
       );
+    }
+    const rootError = rootSandboxLaunchError(error as Error, args);
+    if (rootError) {
+      throw rootError;
     }
     throw error;
   }

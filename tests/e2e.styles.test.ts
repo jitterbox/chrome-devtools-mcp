@@ -26,6 +26,7 @@ async function withClient(cb: (client: Client) => Promise<void>) {
       'build/src/bin/chrome-devtools-mcp.js',
       '--headless',
       '--isolated',
+      '--no-page-id-routing',
       '--executable-path',
       await executablePath(),
       '--no-usage-statistics',

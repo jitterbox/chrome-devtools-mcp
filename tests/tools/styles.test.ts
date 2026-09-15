@@ -33,7 +33,7 @@ describe('styles', () => {
   describe('get_computed_styles', () => {
     it('returns filtered computed styles', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html`<div
             id="box"
@@ -65,7 +65,7 @@ describe('styles', () => {
 
     it('can include best-effort rule origins', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html`<div
             id="box"
@@ -102,7 +102,7 @@ describe('styles', () => {
   describe('get_box_model', () => {
     it('returns box quads and rects', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html`<div
             id="box"
@@ -133,7 +133,7 @@ describe('styles', () => {
   describe('get_visibility', () => {
     it('flags display:none as not visible', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(html`<div id="box">hidden</div>`);
         await snapshotPage(context);
         await page.evaluate(() => {
@@ -163,7 +163,7 @@ describe('styles', () => {
   describe('get_computed_styles_batch', () => {
     it('returns styles for multiple elements', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(html`<div>box</div><span>inline</span>`);
         await snapshotPage(context);
 
@@ -190,7 +190,7 @@ describe('styles', () => {
   describe('diff_computed_styles', () => {
     it('returns changed properties between two nodes', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(html`<div>box</div><span>inline</span>`);
         await snapshotPage(context);
 
@@ -226,7 +226,7 @@ describe('styles', () => {
   describe('named snapshots', () => {
     it('saves and diffs snapshot vs current', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html`<div
             id="box"
@@ -286,7 +286,7 @@ describe('styles', () => {
 
     it('writes snapshot JSON to filePath', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html`<div
             id="box"
@@ -326,7 +326,7 @@ describe('styles', () => {
 
     it('diffs live styles against baselineFilePath', async () => {
       await withMcpContext(async (response, context) => {
-        const page = context.getSelectedPptrPage();
+        const page = context.getSelectedMcpPage().pptrPage;
         await page.setContent(
           html`<div
             id="box"

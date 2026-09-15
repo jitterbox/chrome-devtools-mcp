@@ -43,6 +43,7 @@ async function main() {
       'build/src/index.js',
       '--headless',
       '--isolated',
+      '--no-page-id-routing',
       '--executable-path',
       chromePath,
     ],
@@ -168,9 +169,11 @@ async function main() {
     });
     const sdiffJson = extractJson(sdiff.content?.[0]?.text || '');
     const dDisplay = sdiffJson.find(d => d.property === 'display');
-    if (
-      !(dDisplay && dDisplay.before === 'block' && dDisplay.after === 'inline')
-    ) {
+    if (!(
+      dDisplay &&
+      dDisplay.before === 'block' &&
+      dDisplay.after === 'inline'
+    )) {
       throw new Error('snapshot diff display');
     }
 
@@ -184,12 +187,9 @@ async function main() {
     });
     const vis2 = await call('get_visibility', {uid: uidBox});
     const vis2Json = extractJson(vis2.content?.[0]?.text || '');
-    if (
-      !(
-        vis2Json.isVisible === false &&
-        vis2Json.reasons.includes('display:none')
-      )
-    ) {
+    if (!(
+      vis2Json.isVisible === false && vis2Json.reasons.includes('display:none')
+    )) {
       throw new Error('vis2');
     }
 

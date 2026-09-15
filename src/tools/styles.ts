@@ -507,7 +507,7 @@ export const getComputedStyles = definePageTool({
       .describe('If true, include best-effort winning rule origins'),
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response, context) => {
     const pptr = request.page.pptrPage;
     const handle = await request.page.getElementByUid(request.params.uid);
@@ -663,7 +663,7 @@ export const getBoxModel = definePageTool({
       ),
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response, context) => {
     const pptr = request.page.pptrPage;
     const handle = await request.page.getElementByUid(request.params.uid);
@@ -787,7 +787,7 @@ export const getVisibility = definePageTool({
       ),
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response, context) => {
     const pptr = request.page.pptrPage;
     const handle = await request.page.getElementByUid(request.params.uid);
@@ -804,8 +804,7 @@ export const getVisibility = definePageTool({
       ]);
       const style = toMap(
         computedRes.computedStyle as
-          | Array<{name: string; value: string}>
-          | undefined,
+          Array<{name: string; value: string}> | undefined,
       );
 
       const boxModel: {
@@ -895,7 +894,7 @@ export const getComputedStylesBatch = definePageTool({
     properties: z.array(z.string()).optional().describe('Optional filter list'),
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response, context) => {
     const pptr = request.page.pptrPage;
     await context.ensureDomDomainEnabledForPage(pptr);
@@ -953,7 +952,7 @@ export const diffComputedStyles = definePageTool({
       ),
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response, context) => {
     const pptr = request.page.pptrPage;
     await context.ensureDomDomainEnabledForPage(pptr);
@@ -1054,7 +1053,9 @@ export const saveComputedStylesSnapshot = definePageTool({
     filePath: filePathSchema,
   },
   blockedByDialog: true,
-  verifyFilesSchema: ['filePath'],
+  verifyFilesSchema: {
+    filePath: true,
+  },
   handler: async (request, response, context) => {
     assertSaveTarget(request.params.name, request.params.filePath);
 
@@ -1093,8 +1094,7 @@ export const saveComputedStylesSnapshot = definePageTool({
           ]);
           const map = toMap(
             computedRes.computedStyle as
-              | Array<{name: string; value: string}>
-              | undefined,
+              Array<{name: string; value: string}> | undefined,
           );
           let borderRect: BorderRect | undefined;
           if (bmRes?.model?.border) {
@@ -1183,7 +1183,9 @@ export const diffComputedStylesSnapshot = definePageTool({
       .describe('Compare border-box rects to detect effective layout change.'),
   },
   blockedByDialog: true,
-  verifyFilesSchema: ['baselineFilePath'],
+  verifyFilesSchema: {
+    baselineFilePath: true,
+  },
   handler: async (request, response, context) => {
     assertDiffBaseline(request.params.name, request.params.baselineFilePath);
 
@@ -1299,7 +1301,7 @@ export const highlightElementsForStyles = definePageTool({
       .describe('Element uids from the current page snapshot'),
   },
   blockedByDialog: true,
-  verifyFilesSchema: [],
+  verifyFilesSchema: {},
   handler: async (request, response, context) => {
     const pptr = request.page.pptrPage;
     await context.ensureDomDomainEnabledForPage(pptr);

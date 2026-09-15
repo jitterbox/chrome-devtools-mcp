@@ -132,6 +132,51 @@ describe('NetworkFormatter', () => {
         'reqid=1 GET http://example.com [pending] [selected in the DevTools Network panel]',
       );
     });
+
+    it('truncates long urls', async () => {
+      const longUrl = `http://example.com/${'a'.repeat(500)}`;
+      const request = getMockRequest({url: longUrl});
+      const formatter = await NetworkFormatter.from(request, {
+        requestId: 1,
+        saveFile: async () => ({filename: ''}),
+        redactNetworkHeaders: false,
+      });
+
+      assert.equal(
+        formatter.toString(),
+        `reqid=1 GET ${longUrl.substring(0, 255)}... <truncated> [pending]`,
+      );
+      // The structured data keeps the full URL.
+      assert.equal(formatter.toJSON().url, longUrl);
+    });
+
+    it('truncates data: urls', async () => {
+      const dataUrl = `data:image/png;base64,${'A'.repeat(5000)}`;
+      const request = getMockRequest({url: dataUrl});
+      const formatter = await NetworkFormatter.from(request, {
+        requestId: 1,
+        saveFile: async () => ({filename: ''}),
+        redactNetworkHeaders: false,
+      });
+
+      assert.equal(
+        formatter.toString(),
+        `reqid=1 GET ${dataUrl.substring(0, 255)}... <truncated> [pending]`,
+      );
+    });
+
+    it('does not truncate urls within the size limit', async () => {
+      // Exactly at the 150 character limit.
+      const url = `http://example.com/${'a'.repeat(131)}`;
+      const request = getMockRequest({url});
+      const formatter = await NetworkFormatter.from(request, {
+        requestId: 1,
+        saveFile: async () => ({filename: ''}),
+        redactNetworkHeaders: false,
+      });
+
+      assert.equal(formatter.toString(), `reqid=1 GET ${url} [pending]`);
+    });
   });
 
   describe('toStringDetailed', () => {
@@ -306,6 +351,37 @@ describe('NetworkFormatter', () => {
       });
       const result = formatter.toStringDetailed();
       t.assert.snapshot(result);
+    });
+    it('renders the redirect chain in the same order in text and JSON', async () => {
+      // A >=2 element chain makes ordering observable (a single redirect hides
+      // the bug). toStringDetailed() and toJSONDetailed() are emitted from the
+      // same get_network_request call, so they must agree on the order.
+      const first = getMockRequest({url: 'http://example.com/first'});
+      const second = getMockRequest({url: 'http://example.com/second'});
+      const request = getMockRequest({
+        url: 'http://example.com/final',
+        redirectChain: [first, second],
+      });
+      const formatter = await NetworkFormatter.from(request, {
+        requestId: 1,
+        requestIdResolver: () => 2,
+        saveFile: async () => ({filename: ''}),
+        redactNetworkHeaders: false,
+      });
+
+      const text = formatter.toStringDetailed();
+      const json = formatter.toJSONDetailed();
+
+      const textOrder = [
+        ...text.matchAll(/http:\/\/example\.com\/(first|second)/g),
+      ].map(m => m[0]);
+      const jsonOrder = (json.redirectChain ?? []).map(entry => entry.url);
+
+      assert.deepStrictEqual(
+        textOrder,
+        jsonOrder,
+        `redirect chain order differs between text and JSON`,
+      );
     });
     it('shows saved to file message in toStringDetailed', async () => {
       const request = {

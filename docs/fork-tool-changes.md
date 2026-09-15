@@ -8,7 +8,8 @@ build, telemetry, or other repo changes.
 
 **Status:** merged to this fork's `main` (not upstream).
 
-**Upstream baseline:** `ChromeDevTools/chrome-devtools-mcp` `main`.
+**Upstream baseline:** `ChromeDevTools/chrome-devtools-mcp` `1.9.0`
+(plus later `main` commits through `get_css_styles`).
 
 **Fork-only:** do not open PRs against upstream with these changes unless you
 intend to contribute them there separately.
@@ -32,7 +33,9 @@ All new tools:
 **Read-only hints:** seven tools are `readOnlyHint: true`. `save_computed_styles_snapshot`
 is `readOnlyHint: false` because it can write JSON to `filePath`.
 
-**Debugging category tool count:** upstream 6 → fork 14 (+8).
+**Debugging category tool count:** upstream 9 → fork 17 (+8).
+Upstream `get_css_styles` covers matched/cascade rules; these fork tools
+cover computed styles, geometry, diffs, and golden snapshots.
 
 ---
 
@@ -60,17 +63,17 @@ is `readOnlyHint: false` because it can write JSON to `filePath`.
 
 Resolved computed styles for one element.
 
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| `uid` | yes | From latest `take_snapshot` |
-| `properties` | no | Whitelist of CSS property names |
-| `includeSources` | no | Best-effort winning rule origins per property |
+| Parameter        | Required | Notes                                         |
+| ---------------- | -------- | --------------------------------------------- |
+| `uid`            | yes      | From latest `take_snapshot`                   |
+| `properties`     | no       | Whitelist of CSS property names               |
+| `includeSources` | no       | Best-effort winning rule origins per property |
 
 **Response shape:**
 
 ```json
 {
-  "computed": { "display": "block", "color": "rgb(0, 0, 255)" },
+  "computed": {"display": "block", "color": "rgb(0, 0, 255)"},
   "sourceMap": {
     "display": {
       "source": "inline",
@@ -93,8 +96,8 @@ Resolved computed styles for one element.
 CDP box model quads and derived rectangles for layout debugging.
 
 | Parameter | Required |
-|-----------|----------|
-| `uid` | yes |
+| --------- | -------- |
+| `uid`     | yes      |
 
 **Response includes:**
 
@@ -114,8 +117,8 @@ Use for misalignment, overflow, and offset checks without hand-rolling
 Explains why an element may not be visible.
 
 | Parameter | Required |
-|-----------|----------|
-| `uid` | yes |
+| --------- | -------- |
+| `uid`     | yes      |
 
 **Response shape:**
 
@@ -128,14 +131,14 @@ Explains why an element may not be visible.
 
 **Possible `reasons` values:**
 
-| Reason | Trigger |
-|--------|---------|
-| `display:none` | Computed `display` is `none` |
-| `visibility:hidden` | `visibility` is `hidden` or `collapse` |
-| `opacity:0` | Parsed opacity is 0 |
-| `zero-size` | Box model width or height is 0 |
-| `off-viewport` | Border quad does not intersect layout viewport |
-| `clip-path` | Computed `clip-path` is not `none` |
+| Reason              | Trigger                                        |
+| ------------------- | ---------------------------------------------- |
+| `display:none`      | Computed `display` is `none`                   |
+| `visibility:hidden` | `visibility` is `hidden` or `collapse`         |
+| `opacity:0`         | Parsed opacity is 0                            |
+| `zero-size`         | Box model width or height is 0                 |
+| `off-viewport`      | Border quad does not intersect layout viewport |
+| `clip-path`         | Computed `clip-path` is not `none`             |
 
 `isVisible` is `true` only when `reasons` is empty.
 
@@ -145,10 +148,10 @@ Explains why an element may not be visible.
 
 Batch computed styles for many elements in one call.
 
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| `uids` | yes | Array of snapshot uids |
-| `properties` | no | Applied to every element |
+| Parameter    | Required | Notes                    |
+| ------------ | -------- | ------------------------ |
+| `uids`       | yes      | Array of snapshot uids   |
+| `properties` | no       | Applied to every element |
 
 **Response:** JSON object keyed by `uid` → `CssPropertyMap`.
 
@@ -161,30 +164,30 @@ form fields) without N separate `get_computed_styles` calls.
 
 Side-by-side computed-style diff for two elements on the **same page**.
 
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| `uidA` | yes | First element |
-| `uidB` | yes | Second element |
-| `properties` | no | Filter diff to these properties |
-| `compareGeometry` | no | Also compare border-box rects |
+| Parameter         | Required | Notes                           |
+| ----------------- | -------- | ------------------------------- |
+| `uidA`            | yes      | First element                   |
+| `uidB`            | yes      | Second element                  |
+| `properties`      | no       | Filter diff to these properties |
+| `compareGeometry` | no       | Also compare border-box rects   |
 
 **Response fields:**
 
-| Field | Meaning |
-|-------|---------|
-| `styleChanges` | `{ property, before, after }[]` — values from A → B |
-| `changeClass` | Classification (see below) |
-| `effectiveLayoutChange` | Whether layout likely changed |
-| `geometry` | Present when `compareGeometry: true` — border rects + `approximatelyEqual` |
+| Field                   | Meaning                                                                    |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `styleChanges`          | `{ property, before, after }[]` — values from A → B                        |
+| `changeClass`           | Classification (see below)                                                 |
+| `effectiveLayoutChange` | Whether layout likely changed                                              |
+| `geometry`              | Present when `compareGeometry: true` — border rects + `approximatelyEqual` |
 
 **`changeClass` values:**
 
-| Value | Meaning |
-|-------|---------|
-| `none` | No style changes (and no geometry shift, if compared) |
-| `cascadeOnly` | Layout-related properties changed but border geometry unchanged |
+| Value             | Meaning                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `none`            | No style changes (and no geometry shift, if compared)                |
+| `cascadeOnly`     | Layout-related properties changed but border geometry unchanged      |
 | `layoutEffective` | Geometry changed or layout properties changed without geometry proof |
-| `paintLikely` | Non-layout properties changed (color, background, etc.) |
+| `paintLikely`     | Non-layout properties changed (color, background, etc.)              |
 
 ---
 
@@ -193,12 +196,12 @@ Side-by-side computed-style diff for two elements on the **same page**.
 Store a named baseline and/or write schema v1 JSON to disk for cross-run
 regression checks.
 
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| `name` | no* | In-memory name within this MCP session |
-| `filePath` | no* | Write full snapshot JSON to this path |
-| `uids` | yes | Elements to capture |
-| `properties` | no | Filter stored computed values |
+| Parameter    | Required | Notes                                  |
+| ------------ | -------- | -------------------------------------- |
+| `name`       | no*      | In-memory name within this MCP session |
+| `filePath`   | no*      | Write full snapshot JSON to this path  |
+| `uids`       | yes      | Elements to capture                    |
+| `properties` | no       | Filter stored computed values          |
 
 \* At least one of `name` or `filePath` is required.
 
@@ -208,11 +211,24 @@ regression checks.
 {
   "schemaVersion": 1,
   "name": "optional-label",
-  "meta": { "capturedAt": "...", "url": "...", "viewportWidth": 1280, "viewportHeight": 720, "dpr": 1 },
+  "meta": {
+    "capturedAt": "...",
+    "url": "...",
+    "viewportWidth": 1280,
+    "viewportHeight": 720,
+    "dpr": 1
+  },
   "elements": {
     "1_1": {
-      "computed": { "display": "block" },
-      "borderRect": { "left": 0, "top": 0, "right": 10, "bottom": 10, "width": 10, "height": 10 },
+      "computed": {"display": "block"},
+      "borderRect": {
+        "left": 0,
+        "top": 0,
+        "right": 10,
+        "bottom": 10,
+        "width": 10,
+        "height": 10
+      },
       "domPath": "div:nth-of-type(1) > div:nth-of-type(1)",
       "backendNodeId": 42
     }
@@ -228,14 +244,14 @@ Legacy flat snapshots (uid → computed map only) are still readable from file.
 
 Compare a **live** element against an in-memory snapshot or a JSON baseline file.
 
-| Parameter | Required | Notes |
-|-----------|----------|-------|
-| `name` | no* | In-memory snapshot from `save_computed_styles_snapshot` |
-| `baselineFilePath` | no* | JSON file from `save_computed_styles_snapshot` `filePath` |
-| `uid` | yes | Live element uid |
-| `domPath` | no | Match baseline by path when uid changed after reload |
-| `properties` | no | Filter diff |
-| `compareGeometry` | no | Compare border rects |
+| Parameter          | Required | Notes                                                     |
+| ------------------ | -------- | --------------------------------------------------------- |
+| `name`             | no*      | In-memory snapshot from `save_computed_styles_snapshot`   |
+| `baselineFilePath` | no*      | JSON file from `save_computed_styles_snapshot` `filePath` |
+| `uid`              | yes      | Live element uid                                          |
+| `domPath`          | no       | Match baseline by path when uid changed after reload      |
+| `properties`       | no       | Filter diff                                               |
+| `compareGeometry`  | no       | Compare border rects                                      |
 
 \* At least one of `name` or `baselineFilePath` is required. When
 `baselineFilePath` is set, the baseline is loaded from disk — no prior in-memory
@@ -259,9 +275,9 @@ provided and uid miss.
 
 Highlight elements in DevTools and return border quads for overlays.
 
-| Parameter | Required |
-|-----------|----------|
-| `uids` | yes (min 1) |
+| Parameter | Required    |
+| --------- | ----------- |
+| `uids`    | yes (min 1) |
 
 Calls `Overlay.enable` + `Overlay.highlightQuad` per element. Returns:
 
@@ -282,11 +298,11 @@ Quads are 8 numbers (4 x/y pairs) in layout pixels. Pair with
 
 These `McpContext` methods were added so style tools can resolve CDP node ids:
 
-| Method | Purpose |
-|--------|---------|
-| `ensureCssDomainEnabledForPage(page)` | `CSS.enable` once per page |
-| `ensureDomDomainEnabledForPage(page)` | `DOM.enable` + shallow `DOM.getDocument` |
-| `getNodeIdFromHandle(handle, page)` | `DOM.requestNode` / `DOM.describeNode` fallback |
+| Method                                | Purpose                                         |
+| ------------------------------------- | ----------------------------------------------- |
+| `ensureCssDomainEnabledForPage(page)` | `CSS.enable` once per page                      |
+| `ensureDomDomainEnabledForPage(page)` | `DOM.enable` + shallow `DOM.getDocument`        |
+| `getNodeIdFromHandle(handle, page)`   | `DOM.requestNode` / `DOM.describeNode` fallback |
 
 Exposed on the `Context` type in `src/tools/ToolDefinition.ts`.
 
@@ -365,11 +381,11 @@ live as JSON files on the test runner filesystem (or in git).
 
 ### Why file-based for scale
 
-| Approach | Good for | Limitation |
-|----------|----------|------------|
-| In-memory `name` | Same MCP session, quick navigate/reload | Lost when MCP server exits |
-| `filePath` / `baselineFilePath` | Hundreds of tests, CI golden files, before/after across runs | You manage directory layout |
-| `diff_computed_styles` (live A vs B) | Two elements on one page, one session | No cross-run persistence |
+| Approach                             | Good for                                                     | Limitation                  |
+| ------------------------------------ | ------------------------------------------------------------ | --------------------------- |
+| In-memory `name`                     | Same MCP session, quick navigate/reload                      | Lost when MCP server exits  |
+| `filePath` / `baselineFilePath`      | Hundreds of tests, CI golden files, before/after across runs | You manage directory layout |
+| `diff_computed_styles` (live A vs B) | Two elements on one page, one session                        | No cross-run persistence    |
 
 For hundreds of tests, **commit or archive a `before/` tree of JSON files**, run
 the suite on the **after** build, and diff each test's live state against its
@@ -405,8 +421,8 @@ Store stable selectors alongside snapshot files so scripts do not hard-code uids
     "url": "/login",
     "waitFor": ["Sign in"],
     "elements": {
-      "submitButton": { "snapshotIncludes": "button \"Sign in\"" },
-      "emailInput": { "snapshotIncludes": "textbox \"Email\"" }
+      "submitButton": {"snapshotIncludes": "button \"Sign in\""},
+      "emailInput": {"snapshotIncludes": "textbox \"Email\""}
     },
     "properties": ["color", "font-size", "display", "width", "height"]
   }
@@ -496,8 +512,8 @@ for debugging. Use offline JSON diff for bulk reporting or custom tolerances.
 // Pseudocode — adapt to your E2E runner
 async function captureBaseline(testId, spec) {
   await withMcpClient(async client => {
-    await call(client, 'navigate_page', { url: spec.url });
-    await call(client, 'wait_for', { text: spec.waitFor });
+    await call(client, 'navigate_page', {url: spec.url});
+    await call(client, 'wait_for', {text: spec.waitFor});
     const snap = await call(client, 'take_snapshot', {});
     const uids = resolveUids(snap, spec.elements);
     await call(client, 'save_computed_styles_snapshot', {
@@ -510,17 +526,21 @@ async function captureBaseline(testId, spec) {
 
 async function assertAgainstBaseline(testId, spec) {
   await withMcpClient(async client => {
-    await call(client, 'navigate_page', { url: spec.url });
-    await call(client, 'wait_for', { text: spec.waitFor });
+    await call(client, 'navigate_page', {url: spec.url});
+    await call(client, 'wait_for', {text: spec.waitFor});
     const snap = await call(client, 'take_snapshot', {});
     const uids = resolveUids(snap, spec.elements);
     const baseline = JSON.parse(
-      await readFile(`tests/fixtures/style-snapshots/before/${testId}.json`, 'utf8'),
+      await readFile(
+        `tests/fixtures/style-snapshots/before/${testId}.json`,
+        'utf8',
+      ),
     );
 
     for (const [key, liveUid] of Object.entries(uids)) {
-      const domPath = baseline.elements[liveUid]?.domPath
-        ?? findDomPathByManifestKey(baseline, key);
+      const domPath =
+        baseline.elements[liveUid]?.domPath ??
+        findDomPathByManifestKey(baseline, key);
       const diff = await call(client, 'diff_computed_styles_snapshot', {
         baselineFilePath: `tests/fixtures/style-snapshots/before/${testId}.json`,
         uid: liveUid,
@@ -530,7 +550,9 @@ async function assertAgainstBaseline(testId, spec) {
       });
       const result = extractJson(diff);
       if (result.styleChanges?.length) {
-        throw new Error(`${testId}/${key}: ${JSON.stringify(result.styleChanges)}`);
+        throw new Error(
+          `${testId}/${key}: ${JSON.stringify(result.styleChanges)}`,
+        );
       }
     }
   });
@@ -557,25 +579,25 @@ client patterns against this fork.
 
 ## Quick reference
 
-| Tool | Use when |
-|------|----------|
-| `get_computed_styles` | One element's resolved CSS (+ optional rule origins) |
-| `get_box_model` | Quads/rects for layout misalignment |
-| `get_visibility` | Element missing from view — why? |
-| `get_computed_styles_batch` | Many elements, same property subset |
-| `diff_computed_styles` | Two live elements differ? |
-| `save_computed_styles_snapshot` | Capture baseline (`name` and/or `filePath`) |
-| `diff_computed_styles_snapshot` | Live state vs in-memory or `baselineFilePath` |
-| `highlight_elements_for_styles` | DevTools highlight + quad coords |
+| Tool                            | Use when                                             |
+| ------------------------------- | ---------------------------------------------------- |
+| `get_computed_styles`           | One element's resolved CSS (+ optional rule origins) |
+| `get_box_model`                 | Quads/rects for layout misalignment                  |
+| `get_visibility`                | Element missing from view — why?                     |
+| `get_computed_styles_batch`     | Many elements, same property subset                  |
+| `diff_computed_styles`          | Two live elements differ?                            |
+| `save_computed_styles_snapshot` | Capture baseline (`name` and/or `filePath`)          |
+| `diff_computed_styles_snapshot` | Live state vs in-memory or `baselineFilePath`        |
+| `highlight_elements_for_styles` | DevTools highlight + quad coords                     |
 
 ### Files added on this fork (vs upstream)
 
-| Path | Role |
-|------|------|
-| `src/tools/styles.ts` | All 8 tools + file I/O helpers |
-| `src/McpContext.ts` | CDP CSS/DOM/node-id helpers |
-| `src/tools/tools.ts` | Registers `stylesTools` |
+| Path                         | Role                            |
+| ---------------------------- | ------------------------------- |
+| `src/tools/styles.ts`        | All 8 tools + file I/O helpers  |
+| `src/McpContext.ts`          | CDP CSS/DOM/node-id helpers     |
+| `src/tools/tools.ts`         | Registers `stylesTools`         |
 | `tests/tools/styles.test.ts` | Unit tests incl. file save/diff |
-| `tests/e2e.styles.test.ts` | End-to-end MCP flow |
-| `scripts/run-e2e-styles.js` | Manual E2E styles harness |
-| `docs/fork-tool-changes.md` | This document |
+| `tests/e2e.styles.test.ts`   | End-to-end MCP flow             |
+| `scripts/run-e2e-styles.js`  | Manual E2E styles harness       |
+| `docs/fork-tool-changes.md`  | This document                   |
