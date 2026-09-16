@@ -55,15 +55,11 @@ const ZERO_BOX = {
   margin: [0, 0, 0, 0, 0, 0, 0, 0],
 };
 
-function parseJsonLine(
+function styleResultData(
   response: ReturnType<typeof createHandlerMocks>['response'],
 ): unknown {
-  const jsonCall = response.appendResponseLine.getCalls().find(call => {
-    const value = String(call.args[0]);
-    return value.startsWith('{') || value.startsWith('[');
-  });
-  assert.ok(jsonCall, 'Expected JSON response line');
-  return JSON.parse(String(jsonCall.args[0]));
+  sinon.assert.calledOnce(response.setStyleResult);
+  return response.setStyleResult.firstCall.args[2];
 }
 
 function visibleStyles(
@@ -180,9 +176,11 @@ describe('styles tools', () => {
         ['1_1'],
         undefined,
       );
-      sinon.assert.calledWithExactly(
-        response.appendResponseLine,
-        JSON.stringify({computed: {display: 'block'}}),
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'computedStyles',
+        'Computed styles:',
+        {uid: '1_1', computed: {display: 'block'}},
       );
     });
 
@@ -218,12 +216,15 @@ describe('styles tools', () => {
         ['1_1'],
         {sources: true},
       );
-      sinon.assert.calledWithExactly(
-        response.appendResponseLine,
-        JSON.stringify({
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'computedStyles',
+        'Computed styles:',
+        {
+          uid: '1_1',
           computed: {display: 'block'},
           sourceMap: {display: {source: 'inline', value: 'block'}},
-        }),
+        },
       );
     });
 
@@ -252,7 +253,8 @@ describe('styles tools', () => {
         ['1_1'],
         undefined,
       );
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uid: '1_1',
         computed: {display: 'block', color: 'red'},
       });
     });
@@ -269,7 +271,8 @@ describe('styles tools', () => {
         context,
       );
 
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uid: '1_1',
         computed: {display: 'block'},
       });
     });
@@ -292,15 +295,13 @@ describe('styles tools', () => {
       );
 
       sinon.assert.calledOnceWithExactly(page.getBoxModelForUid, '1_1');
-      const jsonCall = response.appendResponseLine
-        .getCalls()
-        .find(call => String(call.args[0]).startsWith('{"width":'));
-      assert.ok(jsonCall, 'Expected box model JSON response line');
-      const parsed = JSON.parse(String(jsonCall.args[0])) as {
+      const parsed = styleResultData(response) as {
+        uid: string;
         width: number;
         borderRect: {width: number};
         contentQuad: number[];
       };
+      assert.strictEqual(parsed.uid, '1_1');
       assert.strictEqual(parsed.width, 10);
       assert.strictEqual(parsed.borderRect.width, 10);
     });
@@ -329,7 +330,7 @@ describe('styles tools', () => {
       );
 
       sinon.assert.calledOnce(page.pptrPage.evaluate);
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         devicePixelRounded: {borderRect: {width: number}};
       };
       assert.strictEqual(parsed.devicePixelRounded.borderRect.width, 20);
@@ -351,7 +352,7 @@ describe('styles tools', () => {
         context,
       );
 
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         devicePixelRounded: {borderRect: {width: number}};
       };
       assert.strictEqual(parsed.devicePixelRounded.borderRect.width, 10);
@@ -393,12 +394,15 @@ describe('styles tools', () => {
       );
       sinon.assert.calledOnce(handle.isIntersectingViewport);
       sinon.assert.calledOnce(handle.dispose);
-      sinon.assert.calledWithExactly(
-        response.appendResponseLine,
-        JSON.stringify({
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'visibility',
+        'Visibility:',
+        {
+          uid: '1_1',
           isVisible: false,
           reasons: ['display:none'],
-        }),
+        },
       );
     });
 
@@ -427,7 +431,8 @@ describe('styles tools', () => {
         context,
       );
 
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uid: '1_1',
         isVisible: false,
         reasons: [
           'visibility:hidden',
@@ -459,7 +464,8 @@ describe('styles tools', () => {
         context,
       );
 
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uid: '1_1',
         isVisible: false,
         reasons: ['visibility:collapse', 'zero-size'],
       });
@@ -476,7 +482,8 @@ describe('styles tools', () => {
       );
 
       sinon.assert.notCalled(page.getElementByUid);
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uid: '1_1',
         isVisible: true,
         reasons: [],
       });
@@ -498,7 +505,8 @@ describe('styles tools', () => {
       );
 
       sinon.assert.calledOnce(handle.dispose);
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uid: '1_1',
         isVisible: true,
         reasons: [],
       });
@@ -523,12 +531,17 @@ describe('styles tools', () => {
         '1_1',
         '1_2',
       ]);
-      sinon.assert.calledWithExactly(
-        response.appendResponseLine,
-        JSON.stringify({
-          '1_1': {display: 'block'},
-          '1_2': {display: 'inline'},
-        }),
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'computedStylesBatch',
+        'Computed styles (batch):',
+        {
+          uids: ['1_1', '1_2'],
+          styles: {
+            '1_1': {display: 'block'},
+            '1_2': {display: 'inline'},
+          },
+        },
       );
     });
 
@@ -542,9 +555,12 @@ describe('styles tools', () => {
         context,
       );
 
-      assert.deepStrictEqual(parseJsonLine(response), {
-        '1_1': {color: 'red'},
-        '1_2': {},
+      assert.deepStrictEqual(styleResultData(response), {
+        uids: ['1_1', '1_2'],
+        styles: {
+          '1_1': {color: 'red'},
+          '1_2': {},
+        },
       });
     });
   });
@@ -576,9 +592,13 @@ describe('styles tools', () => {
         ['1_1', '1_2'],
         {box: true},
       );
-      sinon.assert.calledWithExactly(
-        response.appendResponseLine,
-        JSON.stringify({
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'computedStylesDiff',
+        'Computed styles diff (A -> B):',
+        {
+          uidA: '1_1',
+          uidB: '1_2',
           styleChanges: [
             {property: 'display', before: 'block', after: 'inline'},
           ],
@@ -603,7 +623,7 @@ describe('styles tools', () => {
             },
             approximatelyEqual: true,
           },
-        }),
+        },
       );
     });
 
@@ -625,7 +645,9 @@ describe('styles tools', () => {
         ['1_1', '1_2'],
         undefined,
       );
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uidA: '1_1',
+        uidB: '1_2',
         styleChanges: [],
         changeClass: 'none',
         effectiveLayoutChange: false,
@@ -653,7 +675,7 @@ describe('styles tools', () => {
         context,
       );
 
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         changeClass: string;
         effectiveLayoutChange: boolean;
       };
@@ -682,7 +704,7 @@ describe('styles tools', () => {
         context,
       );
 
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         changeClass: string;
         effectiveLayoutChange: boolean;
         geometry: {approximatelyEqual: boolean};
@@ -708,6 +730,16 @@ describe('styles tools', () => {
       );
 
       sinon.assert.calledOnce(context.setStyleSnapshot);
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'styleSnapshot',
+        '',
+        sinon.match({
+          name: 'snap1',
+          schemaVersion: 1,
+          uids: ['1_1'],
+        }),
+      );
       const [name, snapshot] = context.setStyleSnapshot.firstCall.args;
       assert.strictEqual(name, 'snap1');
       const named = JSON.parse(JSON.stringify(snapshot)) as StyleSnapshotData;
@@ -826,13 +858,11 @@ describe('styles tools', () => {
         ['1_1'],
         {box: true},
       );
-      const jsonCall = response.appendResponseLine
-        .getCalls()
-        .find(call => String(call.args[0]).includes('"styleChanges"'));
-      assert.ok(jsonCall, 'Expected snapshot diff JSON response line');
-      const parsed = JSON.parse(String(jsonCall.args[0])) as {
+      const parsed = styleResultData(response) as {
+        uid: string;
         styleChanges: Array<{before: string; after: string}>;
       };
+      assert.strictEqual(parsed.uid, '1_1');
       assert.strictEqual(parsed.styleChanges[0]?.before, 'block');
       assert.strictEqual(parsed.styleChanges[0]?.after, 'inline');
     });
@@ -943,7 +973,7 @@ describe('styles tools', () => {
         context,
       );
 
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         styleChanges: unknown[];
         domPathBaseline: string;
       };
@@ -975,7 +1005,7 @@ describe('styles tools', () => {
         context,
       );
 
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         snapshotMeta: unknown;
         styleChanges: Array<{property: string; after: string}>;
         overlay: {borderQuad: number[] | null};
@@ -1047,7 +1077,7 @@ describe('styles tools', () => {
         context,
       );
 
-      const parsed = parseJsonLine(response) as {
+      const parsed = styleResultData(response) as {
         changeClass: string;
         geometry: {approximatelyEqual: boolean};
       };
@@ -1073,11 +1103,14 @@ describe('styles tools', () => {
       sinon.assert.calledOnceWithExactly(node.highlight, 'all');
       sinon.assert.calledOnce(node.boxModel);
       sinon.assert.callOrder(node.boxModel, node.highlight);
-      sinon.assert.calledWithExactly(
-        response.appendResponseLine,
-        JSON.stringify({
+      sinon.assert.calledOnceWithExactly(
+        response.setStyleResult,
+        'highlightRegions',
+        'Highlight regions (border quads, layout px):',
+        {
+          uids: ['1_1'],
           regions: [{uid: '1_1', borderQuad: BOX_QUAD}],
-        }),
+        },
       );
     });
 
@@ -1117,7 +1150,8 @@ describe('styles tools', () => {
         context,
       );
 
-      assert.deepStrictEqual(parseJsonLine(response), {
+      assert.deepStrictEqual(styleResultData(response), {
+        uids: ['1_1'],
         regions: [{uid: '1_1', borderQuad: null}],
       });
     });

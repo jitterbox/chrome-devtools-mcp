@@ -21,7 +21,6 @@ import {ToolCategory} from './categories.js';
 import {
   definePageTool,
   type Context,
-  type Response,
   type StyleInspection,
 } from './ToolDefinition.js';
 
@@ -395,13 +394,6 @@ function resolveSnapshotElement(
   return undefined;
 }
 
-function appendJson(response: Response, title: string, value: unknown): void {
-  response.appendResponseLine(title);
-  response.appendResponseLine('```json');
-  response.appendResponseLine(JSON.stringify(value));
-  response.appendResponseLine('```');
-}
-
 function styleChangesBetween(
   before: CssPropertyMap,
   after: CssPropertyMap,
@@ -508,16 +500,17 @@ export const getComputedStyles = definePageTool({
       request.params.properties,
     );
     const result: {
+      uid: string;
       computed: CssPropertyMap;
       sourceMap?: Record<string, unknown>;
-    } = {computed};
+    } = {uid: request.params.uid, computed};
 
     const sources = inspections.get(request.params.uid)?.sources;
     if (request.params.includeSources && sources) {
       result.sourceMap = pickSources(sources, Object.keys(computed));
     }
 
-    appendJson(response, 'Computed styles:', result);
+    response.setStyleResult('computedStyles', 'Computed styles:', result);
   },
 });
 
@@ -557,7 +550,8 @@ export const getBoxModel = definePageTool({
     const roundIfPresent = (rect?: BorderRect) =>
       rect ? roundedRect(rect, dpr) : undefined;
 
-    appendJson(response, 'Box model:', {
+    response.setStyleResult('boxModel', 'Box model:', {
+      uid: request.params.uid,
       width: model.width,
       height: model.height,
       contentQuad: model.content,
@@ -644,7 +638,8 @@ export const getVisibility = definePageTool({
       reasons.push('clip-path');
     }
 
-    appendJson(response, 'Visibility:', {
+    response.setStyleResult('visibility', 'Visibility:', {
+      uid: request.params.uid,
       isVisible: reasons.length === 0,
       reasons,
     });
@@ -681,7 +676,10 @@ export const getComputedStylesBatch = definePageTool({
         request.params.properties,
       );
     }
-    appendJson(response, 'Computed styles (batch):', results);
+    response.setStyleResult('computedStylesBatch', 'Computed styles (batch):', {
+      uids: request.params.uids,
+      styles: results,
+    });
   },
 });
 
@@ -735,6 +733,8 @@ export const diffComputedStyles = definePageTool({
 
     const classification = classifyStyleDiff(changed, geometryEqual);
     const out: Record<string, unknown> = {
+      uidA: request.params.uidA,
+      uidB: request.params.uidB,
       styleChanges: changed,
       ...classification,
     };
@@ -745,7 +745,11 @@ export const diffComputedStyles = definePageTool({
         approximatelyEqual: geometryEqual,
       };
     }
-    appendJson(response, 'Computed styles diff (A -> B):', out);
+    response.setStyleResult(
+      'computedStylesDiff',
+      'Computed styles diff (A -> B):',
+      out,
+    );
   },
 });
 
@@ -847,17 +851,13 @@ export const saveComputedStylesSnapshot = definePageTool({
     if (savedFilePath) {
       response.appendResponseLine(`Snapshot file: ${savedFilePath}`);
     }
-    response.appendResponseLine('```json');
-    response.appendResponseLine(
-      JSON.stringify({
-        name: request.params.name,
-        schemaVersion: 1,
-        meta,
-        uids: Object.keys(elements),
-        filePath: savedFilePath,
-      }),
-    );
-    response.appendResponseLine('```');
+    response.setStyleResult('styleSnapshot', '', {
+      name: request.params.name,
+      schemaVersion: 1,
+      meta,
+      uids: Object.keys(elements),
+      filePath: savedFilePath,
+    });
   },
 });
 
@@ -936,6 +936,7 @@ export const diffComputedStylesSnapshot = definePageTool({
     const baselineLabel =
       request.params.baselineFilePath ?? request.params.name ?? 'snapshot';
     const out: Record<string, unknown> = {
+      uid: request.params.uid,
       snapshotMeta: meta,
       domPathBaseline: baseline.domPath,
       styleChanges: changed,
@@ -949,8 +950,8 @@ export const diffComputedStylesSnapshot = definePageTool({
         approximatelyEqual: geometryEqual,
       };
     }
-    appendJson(
-      response,
+    response.setStyleResult(
+      'computedStylesSnapshotDiff',
       `Computed styles diff vs snapshot "${baselineLabel}" ` +
         `(snapshot -> current):`,
       out,
@@ -992,8 +993,13 @@ export const highlightElementsForStyles = definePageTool({
     for (const region of regions) {
       region.node.highlight('all');
     }
-    appendJson(response, 'Highlight regions (border quads, layout px):', {
-      regions: regions.map(({uid, borderQuad}) => ({uid, borderQuad})),
-    });
+    response.setStyleResult(
+      'highlightRegions',
+      'Highlight regions (border quads, layout px):',
+      {
+        uids: request.params.uids,
+        regions: regions.map(({uid, borderQuad}) => ({uid, borderQuad})),
+      },
+    );
   },
 });

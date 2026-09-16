@@ -138,9 +138,9 @@ describe('e2e styles', () => {
       });
       const batchParsed = extractJson(
         (batch as {content?: Array<{text?: string}>}).content?.[0]?.text || '',
-      ) as Record<string, {display: string}>;
-      assert.strictEqual(batchParsed[uidBox].display, 'block');
-      assert.strictEqual(batchParsed[uidIcon].display, 'inline');
+      ) as {styles: Record<string, {display: string}>};
+      assert.strictEqual(batchParsed.styles[uidBox].display, 'block');
+      assert.strictEqual(batchParsed.styles[uidIcon].display, 'inline');
 
       // Diff between two nodes
       const diff = await client.callTool({

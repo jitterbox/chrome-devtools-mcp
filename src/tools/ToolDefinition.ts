@@ -138,8 +138,19 @@ export interface DevToolsData {
   cdpBackendNodeId?: number;
 }
 
+export type StyleResultKey =
+  | 'computedStyles'
+  | 'boxModel'
+  | 'visibility'
+  | 'computedStylesBatch'
+  | 'computedStylesDiff'
+  | 'styleSnapshot'
+  | 'computedStylesSnapshotDiff'
+  | 'highlightRegions';
+
 export interface Response {
   appendResponseLine(value: string): void;
+  setStyleResult(key: StyleResultKey, title: string, data: object): void;
   setHeapSnapshotAggregates(
     aggregateData: HeapSnapshotAggregateData,
     options?: PaginationOptions,

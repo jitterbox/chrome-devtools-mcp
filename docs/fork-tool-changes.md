@@ -57,6 +57,10 @@ cover computed styles, geometry, diffs, and golden snapshots.
      `McpContext`, not in the browser and not in `localStorage`.
    - **On disk** (`filePath` / `baselineFilePath`) — golden files for CI,
      cross-run before/after, and hundreds of E2E tests (see below).
+5. **Prefer `structuredContent` when enabled.** Default text is still a title
+   plus fenced JSON. With `--experimentalStructuredContent`, each tool also
+   sets a typed key (below). `--experimentalDataFormat=toon|gcf` replaces
+   the fence with a compact encoding of that same object.
 
 ---
 
@@ -76,6 +80,7 @@ Resolved computed styles for one element.
 
 ```json
 {
+  "uid": "1_1",
   "computed": {"display": "block", "color": "rgb(0, 0, 255)"},
   "sourceMap": {
     "display": {
@@ -155,7 +160,8 @@ Batch computed styles for many elements in one call.
 | `uids`       | yes      | Array of snapshot uids   |
 | `properties` | no       | Applied to every element |
 
-**Response:** JSON object keyed by `uid` → `CssPropertyMap`.
+**Response:** `{ uids, styles }` where `styles` is keyed by `uid` →
+`CssPropertyMap`.
 
 Use for design-token parity checks across multiple nodes (nav items, cards,
 form fields) without N separate `get_computed_styles` calls.
@@ -285,6 +291,7 @@ Highlights each node through DevTools `DOMNode.highlight('all')`. Returns:
 
 ```json
 {
+  "uids": ["1_3"],
   "regions": [
     { "uid": "1_3", "borderQuad": [x1, y1, x2, y2, …] }
   ]
@@ -312,6 +319,21 @@ Named snapshots live on `McpContext` (`getStyleSnapshot` / `setStyleSnapshot`).
 
 These share the DevTools universe session with `get_css_styles`, so CSS/DOM
 are enabled once and node IDs stay consistent.
+
+Handlers call `response.setStyleResult(key, title, data)`. `McpResponse.handle`
+writes the fenced JSON (or compact toon/gcf text) and copies `data` onto
+`structuredContent[key]`:
+
+| Key                          | Tool                            |
+| ---------------------------- | ------------------------------- |
+| `computedStyles`             | `get_computed_styles`           |
+| `boxModel`                   | `get_box_model`                 |
+| `visibility`                 | `get_visibility`                |
+| `computedStylesBatch`        | `get_computed_styles_batch`     |
+| `computedStylesDiff`         | `diff_computed_styles`          |
+| `styleSnapshot`              | `save_computed_styles_snapshot` |
+| `computedStylesSnapshotDiff` | `diff_computed_styles_snapshot` |
+| `highlightRegions`           | `highlight_elements_for_styles` |
 
 ---
 

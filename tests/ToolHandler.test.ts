@@ -25,8 +25,47 @@ import type {
   ToolDefinition,
 } from '../src/tools/ToolDefinition.js';
 import {createTools} from '../src/tools/tools.js';
-import {getMockBrowser} from './utils.js';
+import {getMockBrowser, getTextContent} from './utils.js';
 import {Mutex} from '../src/third_party/index.js';
+
+function createStyleResultTool(): ToolDefinition {
+  return {
+    name: 'get_computed_styles',
+    description: 'Resolved computed styles',
+    annotations: {
+      category: ToolCategory.DEBUGGING,
+      readOnlyHint: true,
+    },
+    schema: {
+      uid: zod.string(),
+    },
+    blockedByDialog: false,
+    verifyFilesSchema: {},
+    handler: async (_request, response) => {
+      response.setStyleResult('computedStyles', 'Computed styles:', {
+        uid: '1_1',
+        computed: {display: 'block'},
+      });
+    },
+  };
+}
+
+function createStyleToolHandler(argv: string[]): ToolHandler {
+  const mockContext = sinon.createStubInstance(McpContext);
+  const mockProcess = sinon.createStubInstance(ChildProcess);
+  mockContext.browser = getMockBrowser({process: mockProcess});
+  mockContext.getDevToolsData.resolves(undefined);
+  mockContext.getSelectedMcpPageUrl.returns('https://example.test/');
+  const serverArgs = parseArguments('1.0.0', ['node', 'script.js', ...argv], {
+    CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true',
+  });
+  return new ToolHandler(
+    createStyleResultTool(),
+    serverArgs,
+    async () => mockContext,
+    new Mutex(),
+  );
+}
 
 describe('ToolHandler', () => {
   afterEach(() => {
@@ -1116,5 +1155,62 @@ describe('ToolHandler', () => {
     assert.deepStrictEqual(receivedParams, {
       filePath: canonicalFilePath,
     });
+  });
+
+  it('omits structuredContent unless experimentalStructuredContent is on', async () => {
+    const result = await createStyleToolHandler([]).handle({uid: '1_1'});
+    assert.strictEqual(result.structuredContent, undefined);
+    assert.ok(getTextContent(result.content[0]).includes('```json'));
+  });
+
+  it('attaches style structuredContent when experimentalStructuredContent is on', async () => {
+    const result = await createStyleToolHandler([
+      '--experimentalStructuredContent',
+    ]).handle({uid: '1_1'});
+    const structured = result.structuredContent as {
+      computedStyles?: {uid: string; computed: {display: string}};
+    };
+    assert.deepStrictEqual(structured.computedStyles, {
+      uid: '1_1',
+      computed: {display: 'block'},
+    });
+    assert.ok(getTextContent(result.content[0]).includes('```json'));
+  });
+
+  it('compact-encodes style text when experimentalDataFormat is toon', async () => {
+    const result = await createStyleToolHandler([
+      '--experimentalStructuredContent',
+      '--experimentalDataFormat=toon',
+    ]).handle({uid: '1_1'});
+    const text = getTextContent(result.content[0]);
+    assert.ok(text.includes('Computed styles:'));
+    assert.ok(!text.includes('```json'));
+    const structured = result.structuredContent as {
+      computedStyles?: {uid: string};
+    };
+    assert.strictEqual(structured.computedStyles?.uid, '1_1');
+  });
+
+  it('uses toon when the legacy experimentalToonFormat flag is set', async () => {
+    const result = await createStyleToolHandler([
+      '--experimentalToonFormat',
+    ]).handle({uid: '1_1'});
+    const text = getTextContent(result.content[0]);
+    assert.ok(!text.includes('```json'));
+    assert.strictEqual(result.structuredContent, undefined);
+  });
+
+  it('compact-encodes style text when experimentalDataFormat is gcf', async () => {
+    const result = await createStyleToolHandler([
+      '--experimentalStructuredContent',
+      '--experimentalDataFormat=gcf',
+    ]).handle({uid: '1_1'});
+    const text = getTextContent(result.content[0]);
+    assert.ok(text.includes('Computed styles:'));
+    assert.ok(!text.includes('```json'));
+    const structured = result.structuredContent as {
+      computedStyles?: {computed: {display: string}};
+    };
+    assert.strictEqual(structured.computedStyles?.computed.display, 'block');
   });
 });

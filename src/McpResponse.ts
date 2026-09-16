@@ -55,6 +55,7 @@ import type {
   MatchedStyles,
   Response,
   SnapshotParams,
+  StyleResultKey,
 } from './tools/ToolDefinition.js';
 import {
   type InsightName,
@@ -128,6 +129,11 @@ export class McpResponse implements Response {
   #cssStylesData?: {
     matchedStyles: MatchedStyles;
     options: CssFormatterOptions & PaginationOptions;
+  };
+  #styleResult?: {
+    key: StyleResultKey;
+    title: string;
+    data: object;
   };
   #listExtensions?: boolean;
   #listThirdPartyDeveloperTools?: boolean;
@@ -267,6 +273,10 @@ export class McpResponse implements Response {
       matchedStyles,
       options,
     };
+  }
+
+  setStyleResult(key: StyleResultKey, title: string, data: object): void {
+    this.#styleResult = {key, title, data};
   }
 
   setError(error: Error): void {
@@ -861,6 +871,14 @@ export class McpResponse implements Response {
       extensionPages?: object[];
       comments?: StructuredCommentThread[];
       matchedStyles?: object;
+      computedStyles?: object;
+      boxModel?: object;
+      visibility?: object;
+      computedStylesBatch?: object;
+      computedStylesDiff?: object;
+      styleSnapshot?: object;
+      computedStylesSnapshotDiff?: object;
+      highlightRegions?: object;
       errorMessage?: string;
       navigatedToUrl?: string;
       geolocation?: {latitude: number; longitude: number};
@@ -902,6 +920,20 @@ export class McpResponse implements Response {
     if (this.#textResponseLines.length) {
       structuredContent.message = this.#textResponseLines.join('\n');
       response.push(...this.#textResponseLines);
+    }
+
+    if (this.#styleResult) {
+      structuredContent[this.#styleResult.key] = this.#styleResult.data;
+      if (this.#styleResult.title) {
+        response.push(this.#styleResult.title);
+      }
+      if (compactEncode) {
+        response.push(compactEncode(this.#styleResult.data));
+      } else {
+        response.push('```json');
+        response.push(JSON.stringify(this.#styleResult.data));
+        response.push('```');
+      }
     }
 
     if (this.#attachedWaitForResult) {

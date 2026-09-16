@@ -81,6 +81,22 @@ describe('cli args parsing', () => {
     assert.strictEqual(args.viaCli, true);
   });
 
+  it('parses experimentalDataFormat values', () => {
+    assert.strictEqual(
+      parseArguments(['--experimentalDataFormat=toon']).experimentalDataFormat,
+      'toon',
+    );
+    assert.strictEqual(
+      parseArguments(['--experimentalDataFormat=gcf']).experimentalDataFormat,
+      'gcf',
+    );
+    assert.strictEqual(
+      parseArguments(['--experimentalStructuredContent'])
+        .experimentalStructuredContent,
+      true,
+    );
+  });
+
   it('parses with browser url', async () => {
     const args = parseArguments(['--browserUrl', 'http://localhost:3000']);
     assert.deepStrictEqual(args, {

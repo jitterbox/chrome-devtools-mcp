@@ -1178,6 +1178,120 @@ describe('webmcp', () => {
     );
   });
 
+  it('emits fenced JSON and a typed style structuredContent key', async () => {
+    const response = new McpResponse(createMockParsedArguments());
+    const payload = {uid: '1_1', computed: {display: 'block'}};
+    response.setStyleResult('computedStyles', 'Computed styles:', payload);
+    const {content, structuredContent} = await response.handle(
+      createMockMcpContext(),
+    );
+    const text = getTextContent(content[0]);
+    assert.ok(text.includes('Computed styles:'));
+    assert.ok(text.includes('```json'));
+    assert.ok(text.includes('"display":"block"'));
+    const typed = structuredContent as {
+      computedStyles?: typeof payload;
+      message?: string;
+    };
+    assert.deepStrictEqual(typed.computedStyles, payload);
+    assert.strictEqual(typed.message, undefined);
+  });
+
+  it('keeps style prose in message without embedding the JSON blob', async () => {
+    const response = new McpResponse(createMockParsedArguments());
+    response.appendResponseLine(
+      'Saved styles snapshot "snap1" for 1 elements (schema v1).',
+    );
+    response.setStyleResult('styleSnapshot', '', {
+      name: 'snap1',
+      schemaVersion: 1,
+    });
+    const {content, structuredContent} = await response.handle(
+      createMockMcpContext(),
+    );
+    const text = getTextContent(content[0]);
+    assert.ok(text.includes('Saved styles snapshot "snap1"'));
+    assert.ok(text.includes('```json'));
+    const typed = structuredContent as {
+      message?: string;
+      styleSnapshot?: {name: string};
+    };
+    assert.strictEqual(
+      typed.message,
+      'Saved styles snapshot "snap1" for 1 elements (schema v1).',
+    );
+    assert.ok(!typed.message?.includes('```json'));
+    assert.strictEqual(typed.styleSnapshot?.name, 'snap1');
+  });
+
+  it('assigns each style result key on structuredContent', async () => {
+    const keys = [
+      'computedStyles',
+      'boxModel',
+      'visibility',
+      'computedStylesBatch',
+      'computedStylesDiff',
+      'styleSnapshot',
+      'computedStylesSnapshotDiff',
+      'highlightRegions',
+    ] as const;
+    for (const key of keys) {
+      const response = new McpResponse(createMockParsedArguments());
+      const data = {key};
+      response.setStyleResult(key, 'Title:', data);
+      const {structuredContent} = await response.handle(createMockMcpContext());
+      assert.deepStrictEqual(
+        (structuredContent as Record<string, unknown>)[key],
+        data,
+      );
+    }
+  });
+
+  it('compact-encodes style results for toon without a JSON fence', async () => {
+    const response = new McpResponse(createMockParsedArguments());
+    const payload = {uid: '1_1', computed: {display: 'block'}};
+    response.setStyleResult('computedStyles', 'Computed styles:', payload);
+    const {content, structuredContent} = await response.handle(
+      createMockMcpContext(),
+      'toon',
+    );
+    const text = getTextContent(content[0]);
+    assert.ok(text.includes('Computed styles:'));
+    assert.ok(!text.includes('```json'));
+    assert.ok(!text.includes(JSON.stringify(payload)));
+    assert.deepStrictEqual(
+      (structuredContent as {computedStyles: typeof payload}).computedStyles,
+      payload,
+    );
+  });
+
+  it('compact-encodes style results for gcf without a JSON fence', async () => {
+    const response = new McpResponse(createMockParsedArguments());
+    const payload = {uid: '1_1', isVisible: true, reasons: []};
+    response.setStyleResult('visibility', 'Visibility:', payload);
+    const {content, structuredContent} = await response.handle(
+      createMockMcpContext(),
+      'gcf',
+    );
+    const text = getTextContent(content[0]);
+    assert.ok(text.includes('Visibility:'));
+    assert.ok(!text.includes('```json'));
+    assert.deepStrictEqual(
+      (structuredContent as {visibility: typeof payload}).visibility,
+      payload,
+    );
+  });
+
+  it('omits an empty style title from compact output', async () => {
+    const response = new McpResponse(createMockParsedArguments());
+    response.setStyleResult('styleSnapshot', '', {name: 'snap1'});
+    const {content} = await response.handle(createMockMcpContext(), 'toon');
+    const text = getTextContent(content[0]);
+    assert.ok(!text.startsWith('\n'));
+    assert.ok(!text.includes('```json'));
+    assert.ok(text.length > 0);
+  });
+
   it('returns pagination info when css styles pagination options are provided', async () => {
     await withMcpContext(async (response, context) => {
       const mockStyles = createMockCSSMatchedStyles({
