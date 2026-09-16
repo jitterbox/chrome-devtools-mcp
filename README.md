@@ -1,14 +1,16 @@
 # Chrome DevTools for agents
 
-[![npm chrome-devtools-mcp package](https://img.shields.io/npm/v/chrome-devtools-mcp.svg)](https://npmjs.org/package/chrome-devtools-mcp)
+[![npm @jitterbox/chrome-devtools-mcp package](https://img.shields.io/npm/v/@jitterbox/chrome-devtools-mcp.svg)](https://www.npmjs.com/package/@jitterbox/chrome-devtools-mcp)
 
-Chrome DevTools for agents (`chrome-devtools-mcp`) lets your coding agent (such as Antigravity, Claude, Cursor or Copilot)
+Jitterbox fork of [`ChromeDevTools/chrome-devtools-mcp`](https://github.com/ChromeDevTools/chrome-devtools-mcp), published as `@jitterbox/chrome-devtools-mcp`.
+
+Chrome DevTools for agents (`@jitterbox/chrome-devtools-mcp`) lets your coding agent (such as Antigravity, Claude, Cursor or Copilot)
 control and inspect a live Chrome browser. It acts as a Model-Context-Protocol
 (MCP) server, giving your AI coding assistant access to the full power of
 Chrome DevTools for reliable automation, in-depth debugging, and performance analysis.
 A [CLI][cli] is also provided for use without MCP.
 
-[Tool reference][tool-reference] | [Changelog][changelog] | [Contributing][contributing] | [Troubleshooting][troubleshooting] | [Design Principles][design-principles]
+[Tool reference][tool-reference] | [Fork style tools][fork-tool-changes] | [Changelog][changelog] | [Contributing][contributing] | [Troubleshooting][troubleshooting] | [Design Principles][design-principles]
 
 ## Key features
 
@@ -20,6 +22,40 @@ A [CLI][cli] is also provided for use without MCP.
 - **Reliable automation**. Uses
   [puppeteer](https://github.com/puppeteer/puppeteer) to automate actions in
   Chrome and automatically wait for action results.
+- **Fork-only computed style tools**: Eight Debugging tools (not in upstream)
+  for resolved CSS, geometry, visibility, diffs, and golden snapshots. See
+  [Fork-only style tools](#fork-only-style-tools).
+
+## Fork-only style tools
+
+This fork adds **8 Debugging tools** on top of upstream 1.9.0. They read
+resolved styles and geometry from DevTools `CSSModel` / `DOMModel` (same
+universe as `get_css_styles`). Snapshot first (`take_snapshot`), then pass
+`uid`s. They are **not** available in `--slim` mode.
+
+| Tool | What it does |
+| --- | --- |
+| [`get_computed_styles`][tool-get-computed-styles] | Resolved computed CSS; optional cascade-accurate `includeSources` |
+| [`get_computed_styles_batch`][tool-get-computed-styles-batch] | Same, for many `uid`s in one call |
+| [`get_box_model`][tool-get-box-model] | Content / padding / border / margin quads and rects |
+| [`get_visibility`][tool-get-visibility] | Why a node is hidden (`display:none`, off-viewport, …) |
+| [`diff_computed_styles`][tool-diff-computed-styles] | Style (and optional geometry) diff between two nodes |
+| [`save_computed_styles_snapshot`][tool-save-computed-styles-snapshot] | Named in-memory baseline and/or JSON golden on disk |
+| [`diff_computed_styles_snapshot`][tool-diff-computed-styles-snapshot] | Live node vs in-memory or `baselineFilePath` golden |
+| [`highlight_elements_for_styles`][tool-highlight-elements-for-styles] | DevTools highlight plus border quads for overlays |
+
+Typical agent loop: `take_snapshot` → inspect / batch / visibility →
+`save_computed_styles_snapshot` → change the page →
+`diff_computed_styles_snapshot`. Prefer these over `evaluate_script` for
+styles. Use upstream `get_css_styles` when you need the cascade (why a
+rule won).
+
+With `--experimentalStructuredContent`, each tool also sets a typed key on
+MCP `structuredContent`. `--experimentalDataFormat=toon|gcf` compact-encodes
+the same object in the text channel.
+
+Full shapes, golden-file workflow, and `structuredContent` keys:
+[Fork tool changes][fork-tool-changes].
 
 ## Disclaimers
 
@@ -45,7 +81,7 @@ Google collects usage statistics (such as tool invocation success rates, latency
 Data collection is **enabled by default**. You can opt-out by passing the `--no-usage-statistics` flag when starting the server:
 
 ```json
-"args": ["-y", "chrome-devtools-mcp@latest", "--no-usage-statistics"]
+"args": ["-y", "@jitterbox/chrome-devtools-mcp@latest", "--no-usage-statistics"]
 ```
 
 Google handles this data in accordance with the [Google Privacy Policy](https://policies.google.com/privacy).
@@ -74,14 +110,14 @@ Add the following config to your MCP client:
   "mcpServers": {
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest"]
+      "args": ["-y", "@jitterbox/chrome-devtools-mcp@latest"]
     }
   }
 }
 ```
 
 > [!NOTE]
-> Using `chrome-devtools-mcp@latest` ensures that your MCP client will always use the latest version of the Chrome DevTools MCP server.
+> Using `@jitterbox/chrome-devtools-mcp@latest` ensures that your MCP client will always use the latest version of this fork.
 
 If you are interested in doing only basic browser tasks, use the `--slim` mode:
 
@@ -90,7 +126,7 @@ If you are interested in doing only basic browser tasks, use the `--slim` mode:
   "mcpServers": {
     "chrome-devtools": {
       "command": "npx",
-      "args": ["-y", "chrome-devtools-mcp@latest", "--slim", "--headless"]
+      "args": ["-y", "@jitterbox/chrome-devtools-mcp@latest", "--slim", "--headless"]
     }
   }
 }
@@ -118,7 +154,8 @@ Your MCP client should open the browser and record a performance trace.
 ## Tools
 
 If you run into any issues, checkout our [troubleshooting guide][troubleshooting].
-See the full [Tool Reference][tool-reference] for a complete list of all supported MCP capabilities.
+See the full [Tool Reference][tool-reference] for every MCP capability, including
+the [fork-only style tools](#fork-only-style-tools).
 
 ## Configuration
 
@@ -141,6 +178,15 @@ For a reference implementation, see the [Gemini CLI browser agent documentation]
 [configuration-guide]: ./docs/configuration.md
 [contributing]: ./CONTRIBUTING.md
 [design-principles]: ./docs/design-principles.md
+[fork-tool-changes]: ./docs/fork-tool-changes.md
 [slim-tool-reference]: ./docs/slim-tool-reference.md
+[tool-diff-computed-styles]: ./docs/tool-reference.md#diff_computed_styles
+[tool-diff-computed-styles-snapshot]: ./docs/tool-reference.md#diff_computed_styles_snapshot
+[tool-get-box-model]: ./docs/tool-reference.md#get_box_model
+[tool-get-computed-styles]: ./docs/tool-reference.md#get_computed_styles
+[tool-get-computed-styles-batch]: ./docs/tool-reference.md#get_computed_styles_batch
+[tool-get-visibility]: ./docs/tool-reference.md#get_visibility
+[tool-highlight-elements-for-styles]: ./docs/tool-reference.md#highlight_elements_for_styles
 [tool-reference]: ./docs/tool-reference.md
+[tool-save-computed-styles-snapshot]: ./docs/tool-reference.md#save_computed_styles_snapshot
 [troubleshooting]: ./docs/troubleshooting.md
