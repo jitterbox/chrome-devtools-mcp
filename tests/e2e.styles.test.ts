@@ -102,6 +102,9 @@ describe('e2e styles', () => {
         sourceMap?: Record<string, unknown>;
       };
       assert.strictEqual(csParsed.computed.display, 'block');
+      const source = csParsed.sourceMap?.display as
+        {source?: string} | undefined;
+      assert.strictEqual(source?.source, 'inline');
 
       // get_box_model
       const bm = await client.callTool({
@@ -222,6 +225,32 @@ describe('e2e styles', () => {
       };
       assert.strictEqual(v2.isVisible, false);
       assert.ok(v2.reasons.includes('display:none'));
+
+      const highlight = await client.callTool({
+        name: 'highlight_elements_for_styles',
+        arguments: {uids: [uidIcon]},
+      });
+      const highlightParsed = extractJson(
+        (highlight as {content?: Array<{text?: string}>}).content?.[0]?.text ||
+          '',
+      ) as {regions: Array<{uid: string; borderQuad: number[] | null}>};
+      assert.strictEqual(highlightParsed.regions[0]?.uid, uidIcon);
+      assert.ok(highlightParsed.regions[0]?.borderQuad);
+
+      const geometryDiff = await client.callTool({
+        name: 'diff_computed_styles',
+        arguments: {
+          uidA: uidBox,
+          uidB: uidIcon,
+          properties: ['display'],
+          compareGeometry: true,
+        },
+      });
+      const geometryParsed = extractJson(
+        (geometryDiff as {content?: Array<{text?: string}>}).content?.[0]
+          ?.text || '',
+      ) as {geometry?: {approximatelyEqual?: boolean}};
+      assert.ok(geometryParsed.geometry);
     });
   });
 });

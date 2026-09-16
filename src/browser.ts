@@ -233,9 +233,6 @@ export async function launch(options: McpLaunchOptions): Promise<Browser> {
     ...(options.chromeArgs ?? []),
     '--hide-crash-restore-bubble',
   ];
-  if (process.env.CHROME_DEVTOOLS_MCP_TEST_NO_SANDBOX === 'true') {
-    args.push('--no-sandbox', '--disable-setuid-sandbox');
-  }
   const ignoreDefaultArgs: LaunchOptions['ignoreDefaultArgs'] =
     options.ignoreDefaultChromeArgs ?? false;
 

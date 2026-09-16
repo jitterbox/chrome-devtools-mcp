@@ -27,7 +27,8 @@ highlights, and **file-based JSON golden snapshots**. They live in:
 All new tools:
 
 - Target elements by **`uid`** from [`take_snapshot`](tool-reference.md#take_snapshot)
-- Use Chrome DevTools Protocol (CDP) via Puppeteer internals
+- Resolve nodes through the same DevTools `CSSModel` / `DOMModel` universe as
+  upstream [`get_css_styles`](tool-reference.md#get_css_styles)
 - Are **not** included in **slim mode** (`--slim`)
 
 **Read-only hints:** seven tools are `readOnlyHint: true`. `save_computed_styles_snapshot`
@@ -45,13 +46,15 @@ cover computed styles, geometry, diffs, and golden snapshots.
    that response. Re-snapshot after DOM changes; uids are not stable across
    navigations or re-renders.
 2. **Prefer these tools over `evaluate_script` for styles.** They return
-   structured JSON from `CSS.getComputedStyleForNode` / `DOM.getBoxModel`
-   instead of scraping `getComputedStyle` in page JS.
+   structured JSON from DevTools `CSSModel.getComputedStyle` /
+   `DOMNode.boxModel()` instead of scraping `getComputedStyle` in page JS.
+   Use upstream `get_css_styles` when you need the full cascade listing;
+   use these tools for resolved values, geometry, visibility, and diffs.
 3. **Use property filters.** Pass `properties: ["color", "display", …]` to
    shrink payloads when checking specific tokens or layout rules.
 4. **Choose the right persistence layer:**
-   - **In-memory** (`name` on save) — same MCP session only; stored in a
-     server-side `WeakMap`, not in the browser and not in `localStorage`.
+   - **In-memory** (`name` on save) — same MCP session only; stored on
+     `McpContext`, not in the browser and not in `localStorage`.
    - **On disk** (`filePath` / `baselineFilePath`) — golden files for CI,
      cross-run before/after, and hundreds of E2E tests (see below).
 
@@ -63,11 +66,11 @@ cover computed styles, geometry, diffs, and golden snapshots.
 
 Resolved computed styles for one element.
 
-| Parameter        | Required | Notes                                         |
-| ---------------- | -------- | --------------------------------------------- |
-| `uid`            | yes      | From latest `take_snapshot`                   |
-| `properties`     | no       | Whitelist of CSS property names               |
-| `includeSources` | no       | Best-effort winning rule origins per property |
+| Parameter        | Required | Notes                                 |
+| ---------------- | -------- | ------------------------------------- |
+| `uid`            | yes      | From latest `take_snapshot`           |
+| `properties`     | no       | Whitelist of CSS property names       |
+| `includeSources` | no       | Cascade-accurate winning declarations |
 
 **Response shape:**
 
@@ -77,17 +80,16 @@ Resolved computed styles for one element.
   "sourceMap": {
     "display": {
       "source": "inline",
-      "selector": null,
-      "origin": null,
-      "styleSheetId": null,
-      "range": null
+      "value": "block"
     }
   }
 }
 ```
 
-`sourceMap` is omitted unless `includeSources: true`. Origins are matched from
-`CSS.getMatchedStylesForNode` (inline, attributes, matched rules).
+`sourceMap` is omitted unless `includeSources: true`. Origins come from the
+DevTools matched cascade (`CSSModel.cachedMatchedCascadeForNode` +
+`CssFormatter.collectRules` with `status === 'active'`), so they match
+`get_css_styles` rather than a computed-value equality heuristic.
 
 ---
 
@@ -279,7 +281,7 @@ Highlight elements in DevTools and return border quads for overlays.
 | --------- | ----------- |
 | `uids`    | yes (min 1) |
 
-Calls `Overlay.enable` + `Overlay.highlightQuad` per element. Returns:
+Highlights each node through DevTools `DOMNode.highlight('all')`. Returns:
 
 ```json
 {
@@ -296,26 +298,20 @@ Quads are 8 numbers (4 x/y pairs) in layout pixels. Pair with
 
 ## Supporting infrastructure (not tools, but required)
 
-These `McpContext` methods were added so style tools can resolve CDP node ids:
+Style tools call DevTools-backed helpers on `McpPage` (also on `ContextPage`):
 
-| Method                                | Purpose                                         |
-| ------------------------------------- | ----------------------------------------------- |
-| `ensureCssDomainEnabledForPage(page)` | `CSS.enable` once per page                      |
-| `ensureDomDomainEnabledForPage(page)` | `DOM.enable` + shallow `DOM.getDocument`        |
-| `getNodeIdFromHandle(handle, page)`   | `DOM.requestNode` / `DOM.describeNode` fallback |
+| Method                         | Purpose                                              |
+| ------------------------------ | ---------------------------------------------------- |
+| `getDomNodesForUids(uids)`     | One `pushNodesByBackendIdsToFrontend` per `DOMModel` |
+| `getComputedStylesForUid(uid)` | `CSSModel.getComputedStyle` (in-flight dedupe)       |
+| `getBoxModelForUid(uid)`       | `DOMNode.boxModel()`                                 |
+| `getActiveDeclarationsForUid`  | Cascade-accurate winning declarations                |
+| `highlightUid(uid)`            | `DOMNode.highlight('all')`                           |
 
-Exposed on the `Context` type in `src/tools/ToolDefinition.ts`.
+Named snapshots live on `McpContext` (`getStyleSnapshot` / `setStyleSnapshot`).
 
-**CDP methods used:**
-
-- `CSS.getComputedStyleForNode`
-- `CSS.getMatchedStylesForNode` (optional, `includeSources`)
-- `DOM.getBoxModel`
-- `DOM.describeNode`
-- `DOM.requestNode`
-- `Overlay.enable` / `Overlay.highlightQuad`
-- `Page.getLayoutMetrics` (visibility)
-- `Runtime.evaluate` (viewport / DPR)
+These share the DevTools universe session with `get_css_styles`, so CSS/DOM
+are enabled once and node IDs stay consistent.
 
 ---
 
@@ -559,8 +555,8 @@ async function assertAgainstBaseline(testId, spec) {
 }
 ```
 
-See `scripts/run-e2e-styles.js` and `tests/e2e.styles.test.ts` for working MCP
-client patterns against this fork.
+See `tests/e2e.styles.test.ts` for working MCP client patterns against this
+fork.
 
 ### Operational notes at scale
 
@@ -595,9 +591,9 @@ client patterns against this fork.
 | Path                         | Role                            |
 | ---------------------------- | ------------------------------- |
 | `src/tools/styles.ts`        | All 8 tools + file I/O helpers  |
-| `src/McpContext.ts`          | CDP CSS/DOM/node-id helpers     |
+| `src/McpPage.ts`             | DevTools uid helpers for styles |
+| `src/McpContext.ts`          | Named in-memory style snapshots |
 | `src/tools/tools.ts`         | Registers `stylesTools`         |
-| `tests/tools/styles.test.ts` | Unit tests incl. file save/diff |
+| `tests/tools/styles.test.ts` | Mock-based handler tests        |
 | `tests/e2e.styles.test.ts`   | End-to-end MCP flow             |
-| `scripts/run-e2e-styles.js`  | Manual E2E styles harness       |
 | `docs/fork-tool-changes.md`  | This document                   |

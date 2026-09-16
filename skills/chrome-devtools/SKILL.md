@@ -36,6 +36,14 @@ Note: For `evaluate_script`, `pageId` is required when targeting pages. However,
 - **Visual inspection**: `take_screenshot` (when user needs to see visual state)
 - **Additional details**: `evaluate_script` for data not in accessibility tree
 
+### Styles
+
+- **Cascade / why a rule wins**: `get_css_styles` — matched rules, inheritance, overload status.
+- **Resolved values**: `get_computed_styles` / `get_computed_styles_batch` — computed CSS, optional cascade-accurate `includeSources`.
+- **Geometry / visibility**: `get_box_model`, `get_visibility`, `highlight_elements_for_styles`.
+- **Regression / diffs**: `diff_computed_styles`, `save_computed_styles_snapshot`, `diff_computed_styles_snapshot`.
+- Do not scrape styles with `evaluate_script` when these tools apply.
+
 ### Parallel execution
 
 You can send multiple tool calls in parallel, but maintain correct order: navigate → wait → snapshot → interact.

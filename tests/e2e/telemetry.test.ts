@@ -174,6 +174,8 @@ describe('Telemetry E2E', () => {
           SERVER_PATH,
           '--usage-statistics',
           '--headless',
+          '--chrome-arg=--no-sandbox',
+          '--chrome-arg=--disable-setuid-sandbox',
           `--clearcutEndpoint=http://127.0.0.1:${mockContext.port}`,
           '--clearcutForceFlushIntervalMs=10',
           '--clearcutIncludePidHeader',

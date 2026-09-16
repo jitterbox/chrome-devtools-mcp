@@ -425,6 +425,12 @@ export async function runCli(
 ): Promise<{status: number | null; stdout: string; stderr: string}> {
   return new Promise((resolve, reject) => {
     const finalArgs = [...args];
+    if (args[0] === 'start') {
+      finalArgs.push(
+        '--chrome-arg=--no-sandbox',
+        '--chrome-arg=--disable-setuid-sandbox',
+      );
+    }
     if (sessionId) {
       finalArgs.push('--sessionId', sessionId);
     }

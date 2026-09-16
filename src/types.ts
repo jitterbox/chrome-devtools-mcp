@@ -86,6 +86,46 @@ export type CommentThread = CD4ACommentThread;
 export type RevealTarget = CD4ARevealTarget;
 export type EditorAnchorSignature = CD4AEditorAnchorSignature;
 
+export type CssPropertyMap = Record<string, string>;
+
+export interface StyleSnapshotMeta {
+  capturedAt: string;
+  url: string;
+  viewportWidth: number;
+  viewportHeight: number;
+  dpr: number;
+}
+
+export interface StyleSnapshotElement {
+  computed: CssPropertyMap;
+  borderRect?: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+  };
+  domPath?: string;
+  backendNodeId?: number;
+}
+
+export interface StyleSnapshotData {
+  meta: StyleSnapshotMeta;
+  elements: Record<string, StyleSnapshotElement>;
+}
+
+export type LegacyStyleSnapshotMap = Record<string, CssPropertyMap>;
+
+export type NamedStyleSnapshot = StyleSnapshotData | LegacyStyleSnapshotMap;
+
+export interface ActiveCssDeclaration {
+  source: string;
+  selector?: string;
+  origin?: string;
+  value: string;
+}
+
 declare global {
   interface Window {
     universe?: {

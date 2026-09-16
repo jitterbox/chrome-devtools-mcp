@@ -177,11 +177,14 @@ export interface FunctionRule {
   properties: StructuredCssProperty[];
 }
 
-export type CascadeRule =
+export type NodeCascadeRule =
   | NodeStyleRule
   | AnimationRule
   | MatchedRule
-  | InheritedRule
+  | InheritedRule;
+
+export type CascadeRule =
+  | NodeCascadeRule
   | PseudoElementRule
   | KeyframesRule
   | AtRule
@@ -683,14 +686,26 @@ export class CssFormatter {
   }
 
   /**
+   * Node-level cascade only (inline, attributes, matched, inherited,
+   * transition, animation). Excludes pseudos, keyframes, and at-rules.
+   */
+  static collectNodeRules(
+    matchedStyles: MatchedStyles,
+    options: CssFormatterOptions,
+  ): NodeCascadeRule[] {
+    const rules: NodeCascadeRule[] = [];
+    CssFormatter.#collectNodeStyles(rules, matchedStyles, options);
+    return rules;
+  }
+
+  /**
    * Aggregates all cascading rules impacting the target node.
    */
   static collectRules(
     matchedStyles: MatchedStyles,
     options: CssFormatterOptions,
   ): CascadeRule[] {
-    const rules: CascadeRule[] = [];
-    CssFormatter.#collectNodeStyles(rules, matchedStyles, options);
+    const rules = CssFormatter.collectNodeRules(matchedStyles, options);
     CssFormatter.#collectPseudoStyles(rules, matchedStyles, options);
     CssFormatter.#collectKeyframes(rules, matchedStyles);
     CssFormatter.#collectAtRules(rules, matchedStyles);
@@ -701,7 +716,7 @@ export class CssFormatter {
   }
 
   static #collectNodeStyles(
-    rules: CascadeRule[],
+    rules: NodeCascadeRule[],
     matchedStyles: MatchedStyles,
     options: CssFormatterOptions,
   ): void {

@@ -22,7 +22,8 @@
  *   sinon.assert.calledOnceWithExactly(page.emulate, {networkConditions: 'Slow 3G'});
  */
 
-import type {Frame} from 'puppeteer-core';
+import type {ElementHandle, Frame} from 'puppeteer-core';
+import {CdpElementHandle} from 'puppeteer-core/internal/cdp/ElementHandle.js';
 import sinon from 'sinon';
 
 import {type ParsedArguments, parser} from '../src/config/mcp-options.js';
@@ -56,6 +57,9 @@ export type MockMcpPage = sinon.SinonStubbedInstance<McpPage> & {
 export type MockMcpContext = sinon.SinonStubbedInstance<McpContext>;
 export type MockMcpResponse = sinon.SinonStubbedInstance<McpResponse>;
 export type MockDOMNode = sinon.SinonStubbedInstance<DevTools.DOMModel.DOMNode>;
+export type MockElementHandle = sinon.SinonStubbedInstance<
+  ElementHandle<Element>
+>;
 export type MockCSSProperty =
   sinon.SinonStubbedInstance<DevTools.CSSProperty.CSSProperty>;
 export type MockCSSStyleDeclaration =
@@ -224,6 +228,12 @@ function isBackendNodeId(
 export interface MockDOMNodeOptions {
   selector?: string;
   backendNodeId?: number;
+}
+
+export function createMockElementHandle(): MockElementHandle {
+  return sinon.createStubInstance(
+    CdpElementHandle,
+  ) as unknown as MockElementHandle;
 }
 
 export function createMockDOMNode(

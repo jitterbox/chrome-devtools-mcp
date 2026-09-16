@@ -170,6 +170,79 @@ describe('TextSnapshot', () => {
         foundMiddleInParent,
         'Middle node should be in parent children',
       );
+
+      assert.strictEqual(
+        snapshot.resolveCdpElementId(backendNodeId),
+        extraNode.id,
+      );
     });
+  });
+
+  it('resolves backendNodeId through the snapshot index', () => {
+    const leaf: TextSnapshotNode = {
+      id: '1_2',
+      role: 'button',
+      backendNodeId: 42,
+      children: [],
+      elementHandle: async () => null,
+    };
+    const root: TextSnapshotNode = {
+      id: '1_0',
+      role: 'root',
+      backendNodeId: 1,
+      children: [leaf],
+      elementHandle: async () => null,
+    };
+    const snapshot = new TextSnapshot({
+      root,
+      idToNode: new Map([
+        ['1_0', root],
+        ['1_2', leaf],
+      ]),
+      snapshotId: '1',
+      hasSelectedElement: false,
+      verbose: false,
+    });
+
+    assert.strictEqual(snapshot.resolveCdpElementId(42), '1_2');
+    assert.strictEqual(snapshot.resolveCdpElementId(1), '1_0');
+    assert.strictEqual(snapshot.resolveCdpElementId(99), undefined);
+    assert.strictEqual(snapshot.resolveCdpElementId(0), undefined);
+  });
+
+  it('keeps the first uid when backendNodeIds collide', () => {
+    const first: TextSnapshotNode = {
+      id: '1_1',
+      role: 'button',
+      backendNodeId: 7,
+      children: [],
+      elementHandle: async () => null,
+    };
+    const second: TextSnapshotNode = {
+      id: '1_2',
+      role: 'generic',
+      backendNodeId: 7,
+      children: [],
+      elementHandle: async () => null,
+    };
+    const root: TextSnapshotNode = {
+      id: '1_0',
+      role: 'root',
+      children: [first, second],
+      elementHandle: async () => null,
+    };
+    const snapshot = new TextSnapshot({
+      root,
+      idToNode: new Map([
+        ['1_0', root],
+        ['1_1', first],
+        ['1_2', second],
+      ]),
+      snapshotId: '1',
+      hasSelectedElement: false,
+      verbose: false,
+    });
+
+    assert.strictEqual(snapshot.resolveCdpElementId(7), '1_1');
   });
 });

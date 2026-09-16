@@ -5,16 +5,25 @@
  */
 
 import fs from 'node:fs/promises';
-import path from 'node:path';
 
 import {zod as z} from '../third_party/index.js';
-import type {ElementHandle} from '../third_party/index.js';
+import type {ElementHandle, Page, Protocol} from '../third_party/index.js';
+import type {
+  CssPropertyMap,
+  LegacyStyleSnapshotMap,
+  NamedStyleSnapshot,
+  StyleSnapshotData,
+  StyleSnapshotElement,
+  StyleSnapshotMeta,
+} from '../types.js';
 
 import {ToolCategory} from './categories.js';
-import {definePageTool, type Context} from './ToolDefinition.js';
-// Intentionally no direct imports to avoid unused types and keep payload small.
-
-type CssPropertyMap = Record<string, string>;
+import {
+  definePageTool,
+  type Context,
+  type Response,
+  type StyleInspection,
+} from './ToolDefinition.js';
 
 interface BorderRect {
   left: number;
@@ -25,37 +34,14 @@ interface BorderRect {
   height: number;
 }
 
-interface StyleSnapshotMeta {
-  capturedAt: string;
-  url: string;
-  viewportWidth: number;
-  viewportHeight: number;
-  dpr: number;
-}
-
-interface StyleSnapshotElement {
-  computed: CssPropertyMap;
-  borderRect?: BorderRect;
-  domPath?: string;
-  backendNodeId?: number;
-}
-
-interface StyleSnapshotData {
-  meta: StyleSnapshotMeta;
-  elements: Record<string, StyleSnapshotElement>;
-}
-
-/** Legacy: flat uid -> computed map (pre v1). */
-type LegacySnapshotMap = Record<string, CssPropertyMap>;
-
-const GEOMETRY_EPS_PX = 0.5;
-
 interface StyleSnapshotFile {
   schemaVersion: number;
   name?: string;
   meta: StyleSnapshotMeta;
   elements: Record<string, StyleSnapshotElement>;
 }
+
+const GEOMETRY_EPS_PX = 0.5;
 
 const filePathSchema = z
   .string()
@@ -125,7 +111,7 @@ function isStyleSnapshotFile(value: unknown): value is StyleSnapshotFile {
   );
 }
 
-function isLegacySnapshotMap(value: unknown): value is LegacySnapshotMap {
+function isLegacySnapshotMap(value: unknown): value is LegacyStyleSnapshotMap {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -145,9 +131,7 @@ function isV1SnapshotData(value: unknown): value is StyleSnapshotData {
   );
 }
 
-function parseStyleSnapshotJson(
-  text: string,
-): StyleSnapshotData | LegacySnapshotMap {
+function parseStyleSnapshotJson(text: string): NamedStyleSnapshot {
   const parsed: unknown = JSON.parse(text);
   if (isStyleSnapshotFile(parsed)) {
     return {meta: parsed.meta, elements: parsed.elements};
@@ -182,8 +166,8 @@ async function writeStyleSnapshotFile(
 
 async function readStyleSnapshotFile(
   filePath: string,
-): Promise<StyleSnapshotData | LegacySnapshotMap> {
-  const text = await fs.readFile(path.resolve(filePath), 'utf8');
+): Promise<NamedStyleSnapshot> {
+  const text = await fs.readFile(filePath, 'utf8');
   return parseStyleSnapshotJson(text);
 }
 
@@ -191,15 +175,14 @@ async function resolveBaselineSnapshot(
   context: Context,
   name: string | undefined,
   baselineFilePath: string | undefined,
-): Promise<StyleSnapshotData | LegacySnapshotMap> {
+): Promise<NamedStyleSnapshot> {
   if (baselineFilePath) {
     return readStyleSnapshotFile(baselineFilePath);
   }
   if (!name) {
     throw new Error('Provide either name or baselineFilePath');
   }
-  const snapshots = getSnapshots(context as unknown as object);
-  const snapshot = snapshots.get(name);
+  const snapshot = context.getStyleSnapshot(name);
   if (!snapshot) {
     throw new Error('No snapshot found with the provided name');
   }
@@ -218,29 +201,18 @@ function assertDiffBaseline(name?: string, baselineFilePath?: string): void {
   }
 }
 
-// Per-context named snapshots (v1 or legacy flat map).
-const snapshotsStore = new WeakMap<
-  object,
-  Map<string, StyleSnapshotData | LegacySnapshotMap>
->();
-
-function getSnapshots(context: object) {
-  let map = snapshotsStore.get(context);
-  if (!map) {
-    map = new Map();
-    snapshotsStore.set(context, map);
-  }
-  return map;
-}
-
-function isV1Snapshot(
-  s: StyleSnapshotData | LegacySnapshotMap,
-): s is StyleSnapshotData {
-  return typeof s === 'object' && s !== null && 'meta' in s && 'elements' in s;
+function isV1Snapshot(s: NamedStyleSnapshot): s is StyleSnapshotData {
+  return (
+    typeof s === 'object' &&
+    s !== null &&
+    'meta' in s &&
+    'elements' in s &&
+    isStyleSnapshotElements(s.elements)
+  );
 }
 
 function snapshotElements(
-  raw: StyleSnapshotData | LegacySnapshotMap,
+  raw: NamedStyleSnapshot,
 ): Record<string, StyleSnapshotElement> {
   if (isV1Snapshot(raw)) {
     return raw.elements;
@@ -252,44 +224,22 @@ function snapshotElements(
   return out;
 }
 
-function snapshotMeta(
-  raw: StyleSnapshotData | LegacySnapshotMap,
-): StyleSnapshotMeta | undefined {
+function snapshotMeta(raw: NamedStyleSnapshot): StyleSnapshotMeta | undefined {
   return isV1Snapshot(raw) ? raw.meta : undefined;
 }
 
-function rectFromQuad(
-  quad: Array<{x: number; y: number}> | number[],
-): BorderRect {
-  if (Array.isArray(quad) && typeof quad[0] === 'number') {
-    const xs = [
-      quad[0] as number,
-      quad[2] as number,
-      quad[4] as number,
-      quad[6] as number,
-    ];
-    const ys = [
-      quad[1] as number,
-      quad[3] as number,
-      quad[5] as number,
-      quad[7] as number,
-    ];
-    const left = Math.min(...xs);
-    const top = Math.min(...ys);
-    const right = Math.max(...xs);
-    const bottom = Math.max(...ys);
-    return {
-      left,
-      top,
-      right,
-      bottom,
-      width: right - left,
-      height: bottom - top,
-    };
+function rectFromQuad(quad: Protocol.DOM.Quad): BorderRect | undefined {
+  if (quad.length < 8) {
+    return undefined;
   }
-  const points = quad as Array<{x: number; y: number}>;
-  const xs = points.map(p => p.x);
-  const ys = points.map(p => p.y);
+  const xs = [quad[0], quad[2], quad[4], quad[6]];
+  const ys = [quad[1], quad[3], quad[5], quad[7]];
+  if (
+    xs.some(value => !Number.isFinite(value)) ||
+    ys.some(value => !Number.isFinite(value))
+  ) {
+    return undefined;
+  }
   const left = Math.min(...xs);
   const top = Math.min(...ys);
   const right = Math.max(...xs);
@@ -401,14 +351,12 @@ async function domPathForHandle(handle: ElementHandle<Element>) {
   });
 }
 
-function toMap(
-  properties: Array<{name: string; value: string}> | undefined,
-): CssPropertyMap {
-  const map: CssPropertyMap = {};
-  for (const {name, value} of properties ?? []) {
-    map[name] = value;
+function mapToRecord(map: Map<string, string>): CssPropertyMap {
+  const out: CssPropertyMap = {};
+  for (const [name, value] of map) {
+    out[name] = value;
   }
-  return map;
+  return out;
 }
 
 function filterMap(
@@ -447,49 +395,89 @@ function resolveSnapshotElement(
   return undefined;
 }
 
-function borderQuadToNumbers(
-  border: unknown,
-): [number, number, number, number, number, number, number, number] | null {
-  if (!Array.isArray(border) || border.length < 8) {
-    return null;
+function appendJson(response: Response, title: string, value: unknown): void {
+  response.appendResponseLine(title);
+  response.appendResponseLine('```json');
+  response.appendResponseLine(JSON.stringify(value));
+  response.appendResponseLine('```');
+}
+
+function styleChangesBetween(
+  before: CssPropertyMap,
+  after: CssPropertyMap,
+): Array<{property: string; before: string; after: string}> {
+  const changed: Array<{property: string; before: string; after: string}> = [];
+  const seen = new Set<string>();
+  for (const key of Object.keys(before)) {
+    seen.add(key);
+    if (before[key] !== after[key]) {
+      changed.push({
+        property: key,
+        before: before[key],
+        after: after[key] ?? '',
+      });
+    }
   }
-  if (typeof border[0] === 'number') {
-    return border as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-    ];
+  for (const key of Object.keys(after)) {
+    if (seen.has(key)) {
+      continue;
+    }
+    changed.push({
+      property: key,
+      before: '',
+      after: after[key],
+    });
   }
-  const pts = border as Array<{x: number; y: number}>;
-  const out: number[] = [];
-  for (const p of pts) {
-    out.push(p.x, p.y);
+  return changed;
+}
+
+function pickSources(
+  sources: NonNullable<StyleInspection['sources']>,
+  keys: string[],
+): NonNullable<StyleInspection['sources']> {
+  const out: NonNullable<StyleInspection['sources']> = {};
+  for (const key of keys) {
+    if (key in sources) {
+      out[key] = sources[key];
+    }
   }
-  return out.length >= 8
-    ? (out.slice(0, 8) as [
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-      ])
-    : null;
+  return out;
+}
+
+function computedFromInspection(
+  inspection: StyleInspection | undefined,
+  properties?: string[],
+): CssPropertyMap {
+  return filterMap(mapToRecord(inspection?.computed ?? new Map()), properties);
+}
+
+async function devicePixelRatio(page: Page): Promise<number> {
+  const dpr = page.viewport()?.deviceScaleFactor;
+  if (dpr !== undefined && dpr > 0) {
+    return dpr;
+  }
+  const evaluated = await page.evaluate(() => window.devicePixelRatio);
+  return Number(evaluated) || 1;
+}
+
+function roundedRect(rect: BorderRect, dpr: number): BorderRect {
+  const round = (value: number) => Math.round(value * dpr);
+  return {
+    left: round(rect.left),
+    top: round(rect.top),
+    right: round(rect.right),
+    bottom: round(rect.bottom),
+    width: round(rect.width),
+    height: round(rect.height),
+  };
 }
 
 export const getComputedStyles = definePageTool({
   name: 'get_computed_styles',
   description:
     'Resolved computed styles for one uid; optional property filter and ' +
-    'winning-rule hints (includeSources). Prefer over scraping styles in ' +
-    'evaluate_script.',
+    'cascade-accurate winning declarations (includeSources). Prefer over ' +
+    'scraping styles in evaluate_script.',
   annotations: {
     category: ToolCategory.DEBUGGING,
     readOnlyHint: true,
@@ -504,145 +492,32 @@ export const getComputedStyles = definePageTool({
     includeSources: z
       .boolean()
       .optional()
-      .describe('If true, include best-effort winning rule origins'),
+      .describe(
+        'If true, include cascade-accurate winning declaration origins',
+      ),
   },
   blockedByDialog: true,
   verifyFilesSchema: {},
-  handler: async (request, response, context) => {
-    const pptr = request.page.pptrPage;
-    const handle = await request.page.getElementByUid(request.params.uid);
-    try {
-      await context.ensureDomDomainEnabledForPage(pptr);
-      await context.ensureCssDomainEnabledForPage(pptr);
-      // @ts-expect-error internal API
-      const client = pptr._client();
+  handler: async (request, response) => {
+    const inspections = await request.page.getStyleInspectionForUids(
+      [request.params.uid],
+      request.params.includeSources ? {sources: true} : undefined,
+    );
+    const computed = computedFromInspection(
+      inspections.get(request.params.uid),
+      request.params.properties,
+    );
+    const result: {
+      computed: CssPropertyMap;
+      sourceMap?: Record<string, unknown>;
+    } = {computed};
 
-      const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-      const {computedStyle} = await client.send('CSS.getComputedStyleForNode', {
-        nodeId,
-      });
-
-      const map = toMap(
-        computedStyle as Array<{name: string; value: string}> | undefined,
-      );
-      const filtered = filterMap(map, request.params.properties);
-
-      const result: {
-        computed: CssPropertyMap;
-        sourceMap?: Record<string, unknown>;
-      } = {
-        computed: filtered,
-      };
-
-      if (request.params.includeSources) {
-        try {
-          const {matchedCSSRules, inlineStyle, attributesStyle} =
-            await client.send('CSS.getMatchedStylesForNode', {nodeId});
-
-          const origins: Record<string, unknown> = {};
-          const candidates: Array<{
-            source: string;
-            selector?: string;
-            origin?: string;
-            styleSheetId?: string;
-            range?: unknown;
-            properties?: Array<{name: string; value: string}>;
-          }> = [];
-
-          if (inlineStyle) {
-            candidates.push({
-              source: 'inline',
-              properties: inlineStyle.cssProperties,
-            });
-          }
-          if (attributesStyle) {
-            candidates.push({
-              source: 'attributes',
-              properties: attributesStyle.cssProperties,
-            });
-          }
-          for (const rule of matchedCSSRules ?? []) {
-            candidates.push({
-              source: 'rule',
-              selector: rule.rule.selectorList?.text,
-              origin: rule.rule.origin,
-              styleSheetId: rule.rule.styleSheetId,
-              range: rule.rule.style?.range,
-              properties: rule.rule.style?.cssProperties,
-            });
-          }
-
-          interface OriginEntry {
-            source: string;
-            selector?: string;
-            origin?: string;
-            styleSheetId?: string;
-            range?: unknown;
-            value: string;
-          }
-          const propIndex = new Map<string, OriginEntry[]>();
-          for (const c of candidates) {
-            for (const p of c.properties ?? []) {
-              let arr = propIndex.get(p.name);
-              if (!arr) {
-                arr = [];
-                propIndex.set(p.name, arr);
-              }
-              arr.push({
-                source: c.source,
-                selector: c.selector,
-                origin: c.origin,
-                styleSheetId: c.styleSheetId,
-                range: c.range,
-                value: p.value,
-              });
-            }
-          }
-          for (const propName of Object.keys(filtered)) {
-            const entries = propIndex.get(propName);
-            if (!entries) {
-              continue;
-            }
-            const computedVal = filtered[propName];
-            let origin: Record<string, unknown> | null = null;
-            for (const e of entries) {
-              if (e.value === computedVal) {
-                origin = {
-                  source: e.source,
-                  selector: e.selector,
-                  origin: e.origin,
-                  styleSheetId: e.styleSheetId,
-                  range: e.range,
-                };
-                break;
-              }
-              if (!origin) {
-                origin = {
-                  source: e.source,
-                  selector: e.selector,
-                  origin: e.origin,
-                  styleSheetId: e.styleSheetId,
-                  range: e.range,
-                };
-              }
-            }
-            if (origin) {
-              origins[propName] = origin;
-            }
-          }
-          result.sourceMap = origins;
-        } catch {
-          // ignore origin errors; keep computed only
-        }
-      }
-
-      response.appendResponseLine('Computed styles:');
-      response.appendResponseLine('```json');
-      response.appendResponseLine(JSON.stringify(result));
-      response.appendResponseLine('```');
-    } finally {
-      await handle.dispose();
+    const sources = inspections.get(request.params.uid)?.sources;
+    if (request.params.includeSources && sources) {
+      result.sourceMap = pickSources(sources, Object.keys(computed));
     }
+
+    appendJson(response, 'Computed styles:', result);
   },
 });
 
@@ -664,109 +539,46 @@ export const getBoxModel = definePageTool({
   },
   blockedByDialog: true,
   verifyFilesSchema: {},
-  handler: async (request, response, context) => {
-    const pptr = request.page.pptrPage;
-    const handle = await request.page.getElementByUid(request.params.uid);
-    try {
-      await context.ensureDomDomainEnabledForPage(pptr);
-      // @ts-expect-error internal API
-      const client = pptr._client();
-
-      const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-      const {model} = await client.send('DOM.getBoxModel', {nodeId});
-
-      const borderRect = rectFromQuad(model.border as unknown as number[]);
-      const contentRect = rectFromQuad(model.content as unknown as number[]);
-      const paddingRect = rectFromQuad(model.padding as unknown as number[]);
-      const marginRect = rectFromQuad(model.margin as unknown as number[]);
-      const clientRect = paddingRect; // client box ~= content + padding
-      const boundingRect = borderRect; // bounding box ~= border box
-
-      let dpr = 1;
-      try {
-        const evalRes = await client.send('Runtime.evaluate', {
-          expression: 'window.devicePixelRatio',
-          returnByValue: true,
-        });
-        dpr = Number(evalRes.result?.value ?? 1) || 1;
-      } catch {
-        void 0;
-      }
-
-      const round = (x: number) => Math.round(x * dpr);
-
-      const result = {
-        width: model.width,
-        height: model.height,
-        contentQuad: model.content,
-        paddingQuad: model.padding,
-        borderQuad: model.border,
-        marginQuad: model.margin,
-        contentRect,
-        paddingRect,
-        borderRect,
-        marginRect,
-        clientRect,
-        boundingRect,
-        devicePixelRounded: {
-          contentRect: {
-            left: round(contentRect.left),
-            top: round(contentRect.top),
-            right: round(contentRect.right),
-            bottom: round(contentRect.bottom),
-            width: round(contentRect.width),
-            height: round(contentRect.height),
-          },
-          paddingRect: {
-            left: round(paddingRect.left),
-            top: round(paddingRect.top),
-            right: round(paddingRect.right),
-            bottom: round(paddingRect.bottom),
-            width: round(paddingRect.width),
-            height: round(paddingRect.height),
-          },
-          borderRect: {
-            left: round(borderRect.left),
-            top: round(borderRect.top),
-            right: round(borderRect.right),
-            bottom: round(borderRect.bottom),
-            width: round(borderRect.width),
-            height: round(borderRect.height),
-          },
-          marginRect: {
-            left: round(marginRect.left),
-            top: round(marginRect.top),
-            right: round(marginRect.right),
-            bottom: round(marginRect.bottom),
-            width: round(marginRect.width),
-            height: round(marginRect.height),
-          },
-          clientRect: {
-            left: round(clientRect.left),
-            top: round(clientRect.top),
-            right: round(clientRect.right),
-            bottom: round(clientRect.bottom),
-            width: round(clientRect.width),
-            height: round(clientRect.height),
-          },
-          boundingRect: {
-            left: round(boundingRect.left),
-            top: round(boundingRect.top),
-            right: round(boundingRect.right),
-            bottom: round(boundingRect.bottom),
-            width: round(boundingRect.width),
-            height: round(boundingRect.height),
-          },
-        },
-      };
-
-      response.appendResponseLine('Box model:');
-      response.appendResponseLine('```json');
-      response.appendResponseLine(JSON.stringify(result));
-      response.appendResponseLine('```');
-    } finally {
-      await handle.dispose();
+  handler: async (request, response) => {
+    const model = await request.page.getBoxModelForUid(request.params.uid);
+    if (!model) {
+      throw new Error(
+        `Could not retrieve box model for element with uid "${request.params.uid}".`,
+      );
     }
+
+    const contentRect = rectFromQuad(model.content);
+    const paddingRect = rectFromQuad(model.padding);
+    const borderRect = rectFromQuad(model.border);
+    const marginRect = rectFromQuad(model.margin);
+    const clientRect = paddingRect;
+    const boundingRect = borderRect;
+    const dpr = await devicePixelRatio(request.page.pptrPage);
+    const roundIfPresent = (rect?: BorderRect) =>
+      rect ? roundedRect(rect, dpr) : undefined;
+
+    appendJson(response, 'Box model:', {
+      width: model.width,
+      height: model.height,
+      contentQuad: model.content,
+      paddingQuad: model.padding,
+      borderQuad: model.border,
+      marginQuad: model.margin,
+      contentRect,
+      paddingRect,
+      borderRect,
+      marginRect,
+      clientRect,
+      boundingRect,
+      devicePixelRounded: {
+        contentRect: roundIfPresent(contentRect),
+        paddingRect: roundIfPresent(paddingRect),
+        borderRect: roundIfPresent(borderRect),
+        marginRect: roundIfPresent(marginRect),
+        clientRect: roundIfPresent(clientRect),
+        boundingRect: roundIfPresent(boundingRect),
+      },
+    });
   },
 });
 
@@ -788,91 +600,54 @@ export const getVisibility = definePageTool({
   },
   blockedByDialog: true,
   verifyFilesSchema: {},
-  handler: async (request, response, context) => {
-    const pptr = request.page.pptrPage;
-    const handle = await request.page.getElementByUid(request.params.uid);
-    try {
-      await context.ensureDomDomainEnabledForPage(pptr);
-      await context.ensureCssDomainEnabledForPage(pptr);
-      // @ts-expect-error internal API
-      const client = pptr._client();
+  handler: async (request, response) => {
+    const inspections = await request.page.getStyleInspectionForUids(
+      [request.params.uid],
+      {box: true},
+    );
+    const inspection = inspections.get(request.params.uid);
+    const style = computedFromInspection(inspection);
+    const boxModel = inspection?.box;
+    const reasons: string[] = [];
 
-      const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-      const [computedRes, boxRes] = await Promise.all([
-        client.send('CSS.getComputedStyleForNode', {nodeId}),
-        client.send('DOM.getBoxModel', {nodeId}).catch(() => null),
-      ]);
-      const style = toMap(
-        computedRes.computedStyle as
-          Array<{name: string; value: string}> | undefined,
-      );
-
-      const boxModel: {
-        width: number;
-        height: number;
-        border: Array<{x: number; y: number}>;
-      } | null = boxRes?.model ?? null;
-
-      const reasons: string[] = [];
-
-      if (style['display'] === 'none') {
-        reasons.push('display:none');
-      }
-      if (
-        style['visibility'] === 'hidden' ||
-        style['visibility'] === 'collapse'
-      ) {
-        reasons.push('visibility:hidden');
-      }
-      if (Number(parseFloat(style['opacity'] ?? '1')) === 0) {
-        reasons.push('opacity:0');
-      }
-
-      if (boxModel) {
-        if (boxModel.width === 0 || boxModel.height === 0) {
-          reasons.push('zero-size');
-        }
-        const quad = boxModel.border as Array<{x: number; y: number}>;
-        const xs = quad.map(p => p.x);
-        const ys = quad.map(p => p.y);
-        const left = Math.min(...xs);
-        const top = Math.min(...ys);
-        const right = Math.max(...xs);
-        const bottom = Math.max(...ys);
-
-        try {
-          const {layoutViewport} = await client.send('Page.getLayoutMetrics');
-          const vLeft = layoutViewport?.pageX ?? 0;
-          const vTop = layoutViewport?.pageY ?? 0;
-          const vRight = vLeft + (layoutViewport?.clientWidth ?? 0);
-          const vBottom = vTop + (layoutViewport?.clientHeight ?? 0);
-          const intersects = !(
-            right < vLeft ||
-            left > vRight ||
-            bottom < vTop ||
-            top > vBottom
-          );
-          if (!intersects) {
-            reasons.push('off-viewport');
-          }
-        } catch {
-          void 0;
-        }
-      }
-
-      if ((style['clip-path'] ?? 'none') !== 'none') {
-        reasons.push('clip-path');
-      }
-
-      const isVisible = reasons.length === 0;
-      const result = {isVisible, reasons};
-      response.appendResponseLine('Visibility:');
-      response.appendResponseLine('```json');
-      response.appendResponseLine(JSON.stringify(result));
-      response.appendResponseLine('```');
-    } finally {
-      await handle.dispose();
+    if (style['display'] === 'none') {
+      reasons.push('display:none');
     }
+    if (
+      style['visibility'] === 'hidden' ||
+      style['visibility'] === 'collapse'
+    ) {
+      reasons.push(`visibility:${style['visibility']}`);
+    }
+    if (Number.parseFloat(style['opacity'] ?? '1') === 0) {
+      reasons.push('opacity:0');
+    }
+
+    if (boxModel) {
+      if (boxModel.width === 0 || boxModel.height === 0) {
+        reasons.push('zero-size');
+      }
+      const handle = await request.page.getElementByUid(request.params.uid);
+      try {
+        const intersecting = await handle.isIntersectingViewport();
+        if (!intersecting) {
+          reasons.push('off-viewport');
+        }
+      } catch {
+        // Ignore viewport intersection errors.
+      } finally {
+        await handle.dispose();
+      }
+    }
+
+    if ((style['clip-path'] ?? 'none') !== 'none') {
+      reasons.push('clip-path');
+    }
+
+    appendJson(response, 'Visibility:', {
+      isVisible: reasons.length === 0,
+      reasons,
+    });
   },
 });
 
@@ -895,39 +670,18 @@ export const getComputedStylesBatch = definePageTool({
   },
   blockedByDialog: true,
   verifyFilesSchema: {},
-  handler: async (request, response, context) => {
-    const pptr = request.page.pptrPage;
-    await context.ensureDomDomainEnabledForPage(pptr);
-    await context.ensureCssDomainEnabledForPage(pptr);
-    // @ts-expect-error internal API
-    const client = pptr._client();
-
-    const results: Record<string, CssPropertyMap> = {};
-    await Promise.all(
-      request.params.uids.map(async uid => {
-        const handle = await request.page.getElementByUid(uid);
-        try {
-          const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-          const {computedStyle} = await client.send(
-            'CSS.getComputedStyleForNode',
-            {
-              nodeId,
-            },
-          );
-          const map = toMap(
-            computedStyle as Array<{name: string; value: string}> | undefined,
-          );
-          results[uid] = filterMap(map, request.params.properties);
-        } finally {
-          await handle.dispose();
-        }
-      }),
+  handler: async (request, response) => {
+    const inspections = await request.page.getStyleInspectionForUids(
+      request.params.uids,
     );
-
-    response.appendResponseLine('Computed styles (batch):');
-    response.appendResponseLine('```json');
-    response.appendResponseLine(JSON.stringify(results));
-    response.appendResponseLine('```');
+    const results: Record<string, CssPropertyMap> = {};
+    for (const uid of request.params.uids) {
+      results[uid] = computedFromInspection(
+        inspections.get(uid),
+        request.params.properties,
+      );
+    }
+    appendJson(response, 'Computed styles (batch):', results);
   },
 });
 
@@ -953,67 +707,32 @@ export const diffComputedStyles = definePageTool({
   },
   blockedByDialog: true,
   verifyFilesSchema: {},
-  handler: async (request, response, context) => {
-    const pptr = request.page.pptrPage;
-    await context.ensureDomDomainEnabledForPage(pptr);
-    await context.ensureCssDomainEnabledForPage(pptr);
-    // @ts-expect-error internal API
-    const client = pptr._client();
+  handler: async (request, response) => {
+    const inspections = await request.page.getStyleInspectionForUids(
+      [request.params.uidA, request.params.uidB],
+      request.params.compareGeometry ? {box: true} : undefined,
+    );
+    const a = computedFromInspection(
+      inspections.get(request.params.uidA),
+      request.params.properties,
+    );
+    const b = computedFromInspection(
+      inspections.get(request.params.uidB),
+      request.params.properties,
+    );
+    const changed = styleChangesBetween(a, b);
 
-    async function getMapAndRect(uid: string): Promise<{
-      map: CssPropertyMap;
-      rect?: BorderRect;
-    }> {
-      const handle = await request.page.getElementByUid(uid);
-      try {
-        const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-        const {computedStyle} = await client.send(
-          'CSS.getComputedStyleForNode',
-          {
-            nodeId,
-          },
-        );
-        const map = filterMap(
-          toMap(
-            computedStyle as Array<{name: string; value: string}> | undefined,
-          ),
-          request.params.properties,
-        );
-        let rect: BorderRect | undefined;
-        if (request.params.compareGeometry) {
-          try {
-            const bm = await client.send('DOM.getBoxModel', {nodeId});
-            if (bm.model?.border) {
-              rect = rectFromQuad(bm.model.border as number[]);
-            }
-          } catch {
-            void 0;
-          }
-        }
-        return {map, rect};
-      } finally {
-        await handle.dispose();
-      }
-    }
-
-    const [ra, rb] = await Promise.all([
-      getMapAndRect(request.params.uidA),
-      getMapAndRect(request.params.uidB),
-    ]);
-    const a = ra.map;
-    const b = rb.map;
-    const changed: Array<{property: string; before: string; after: string}> =
-      [];
-    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-    for (const k of keys) {
-      if (a[k] !== b[k]) {
-        changed.push({property: k, before: a[k] ?? '', after: b[k] ?? ''});
-      }
-    }
     let geometryEqual: boolean | undefined;
+    let rectA: BorderRect | undefined;
+    let rectB: BorderRect | undefined;
     if (request.params.compareGeometry) {
-      geometryEqual = borderRectsMatch(ra.rect, rb.rect);
+      const boxA = inspections.get(request.params.uidA)?.box;
+      const boxB = inspections.get(request.params.uidB)?.box;
+      rectA = boxA ? rectFromQuad(boxA.border) : undefined;
+      rectB = boxB ? rectFromQuad(boxB.border) : undefined;
+      geometryEqual = borderRectsMatch(rectA, rectB);
     }
+
     const classification = classifyStyleDiff(changed, geometryEqual);
     const out: Record<string, unknown> = {
       styleChanges: changed,
@@ -1021,15 +740,12 @@ export const diffComputedStyles = definePageTool({
     };
     if (request.params.compareGeometry) {
       out.geometry = {
-        borderRectA: ra.rect,
-        borderRectB: rb.rect,
+        borderRectA: rectA,
+        borderRectB: rectB,
         approximatelyEqual: geometryEqual,
       };
     }
-    response.appendResponseLine('Computed styles diff (A -> B):');
-    response.appendResponseLine('```json');
-    response.appendResponseLine(JSON.stringify(out));
-    response.appendResponseLine('```');
+    appendJson(response, 'Computed styles diff (A -> B):', out);
   },
 });
 
@@ -1060,65 +776,57 @@ export const saveComputedStylesSnapshot = definePageTool({
     assertSaveTarget(request.params.name, request.params.filePath);
 
     const pptr = request.page.pptrPage;
-    await context.ensureDomDomainEnabledForPage(pptr);
-    await context.ensureCssDomainEnabledForPage(pptr);
-    // @ts-expect-error internal API
-    const client = pptr._client();
+    const [inspections, metrics] = await Promise.all([
+      request.page.getStyleInspectionForUids(request.params.uids, {
+        box: true,
+      }),
+      pptr.evaluate(() => ({
+        w: window.innerWidth,
+        h: window.innerHeight,
+        dpr: window.devicePixelRatio,
+      })),
+    ]);
 
-    const vpRes = await client.send('Runtime.evaluate', {
-      expression:
-        '({w:window.innerWidth,h:window.innerHeight,' +
-        'dpr:window.devicePixelRatio})',
-      returnByValue: true,
-    });
-    const vp = vpRes.result?.value as {w?: number; h?: number; dpr?: number};
     const meta: StyleSnapshotMeta = {
       capturedAt: new Date().toISOString(),
       url: pptr.url(),
-      viewportWidth: Number(vp?.w ?? 0),
-      viewportHeight: Number(vp?.h ?? 0),
-      dpr: Number(vp?.dpr ?? 1) || 1,
+      viewportWidth: Number(metrics.w ?? 0),
+      viewportHeight: Number(metrics.h ?? 0),
+      dpr: Number(pptr.viewport()?.deviceScaleFactor ?? metrics.dpr ?? 1) || 1,
     };
 
-    const elements: Record<string, StyleSnapshotElement> = {};
-    await Promise.all(
+    const captured = await Promise.all(
       request.params.uids.map(async uid => {
         const handle = await request.page.getElementByUid(uid);
         try {
-          const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-          const [computedRes, bmRes, domPathRes, descRes] = await Promise.all([
-            client.send('CSS.getComputedStyleForNode', {nodeId}),
-            client.send('DOM.getBoxModel', {nodeId}).catch(() => null),
-            domPathForHandle(handle).catch(() => undefined),
-            client.send('DOM.describeNode', {nodeId}).catch(() => null),
-          ]);
-          const map = toMap(
-            computedRes.computedStyle as
-              Array<{name: string; value: string}> | undefined,
-          );
-          let borderRect: BorderRect | undefined;
-          if (bmRes?.model?.border) {
-            borderRect = rectFromQuad(bmRes.model.border as number[]);
-          }
-          const domPath = domPathRes || undefined;
-          const backendNodeId =
-            (descRes?.node?.backendNodeId as number | undefined) ?? undefined;
-          elements[uid] = {
-            computed: filterMap(map, request.params.properties),
-            borderRect,
-            domPath,
-            backendNodeId,
+          const inspection = inspections.get(uid);
+          const box = inspection?.box;
+          const domPath = await domPathForHandle(handle).catch(() => undefined);
+          const element: StyleSnapshotElement = {
+            computed: computedFromInspection(
+              inspection,
+              request.params.properties,
+            ),
+            borderRect: box ? rectFromQuad(box.border) : undefined,
+            domPath: domPath || undefined,
+            backendNodeId:
+              request.page.getAXNodeByUid(uid)?.backendNodeId ??
+              inspection?.backendNodeId,
           };
+          return [uid, element] as const;
         } finally {
           await handle.dispose();
         }
       }),
     );
+    const elements: Record<string, StyleSnapshotElement> = {};
+    for (const [uid, element] of captured) {
+      elements[uid] = element;
+    }
 
     const data: StyleSnapshotData = {meta, elements};
     if (request.params.name) {
-      const snapshots = getSnapshots(context as unknown as object);
-      snapshots.set(request.params.name, data);
+      context.setStyleSnapshot(request.params.name, data);
     }
 
     let savedFilePath: string | undefined;
@@ -1203,85 +911,50 @@ export const diffComputedStylesSnapshot = definePageTool({
     if (!baseline) {
       throw new Error('No entry for the provided uid/domPath in the snapshot');
     }
-    const baseMap = baseline.computed;
 
-    const pptr = request.page.pptrPage;
-    await context.ensureDomDomainEnabledForPage(pptr);
-    await context.ensureCssDomainEnabledForPage(pptr);
-    // @ts-expect-error internal API
-    const client = pptr._client();
+    const inspections = await request.page.getStyleInspectionForUids(
+      [request.params.uid],
+      {box: true},
+    );
+    const inspection = inspections.get(request.params.uid);
+    const current = computedFromInspection(
+      inspection,
+      request.params.properties,
+    );
+    const changed = styleChangesBetween(baseline.computed, current);
+    const box = inspection?.box;
+    const currentRect = box ? rectFromQuad(box.border) : undefined;
+    const liveQuad = box?.border ?? null;
 
-    const handle = await request.page.getElementByUid(request.params.uid);
-    try {
-      const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-      const {computedStyle} = await client.send('CSS.getComputedStyleForNode', {
-        nodeId,
-      });
-      const current = filterMap(
-        toMap(
-          computedStyle as Array<{name: string; value: string}> | undefined,
-        ),
-        request.params.properties,
-      );
-
-      const changed: Array<{property: string; before: string; after: string}> =
-        [];
-      const keys = new Set([...Object.keys(baseMap), ...Object.keys(current)]);
-      for (const k of keys) {
-        if (baseMap[k] !== current[k]) {
-          changed.push({
-            property: k,
-            before: baseMap[k] ?? '',
-            after: current[k] ?? '',
-          });
-        }
-      }
-
-      let geometryEqual: boolean | undefined;
-      let currentRect: BorderRect | undefined;
-      let liveQuad: number[] | null = null;
-      try {
-        const bm = await client.send('DOM.getBoxModel', {nodeId});
-        const flat = borderQuadToNumbers(bm.model?.border);
-        liveQuad = flat ? [...flat] : null;
-        if (bm.model?.border) {
-          currentRect = rectFromQuad(bm.model.border as number[]);
-        }
-      } catch {
-        void 0;
-      }
-      if (request.params.compareGeometry) {
-        geometryEqual = borderRectsMatch(baseline.borderRect, currentRect);
-      }
-
-      const classification = classifyStyleDiff(changed, geometryEqual);
-      const meta = snapshotMeta(snapshot);
-      const baselineLabel =
-        request.params.baselineFilePath ?? request.params.name ?? 'snapshot';
-      const out: Record<string, unknown> = {
-        snapshotMeta: meta,
-        domPathBaseline: baseline.domPath,
-        styleChanges: changed,
-        overlay: {borderQuad: liveQuad},
-        ...classification,
-      };
-      if (request.params.compareGeometry) {
-        out.geometry = {
-          baselineBorderRect: baseline.borderRect,
-          currentBorderRect: currentRect,
-          approximatelyEqual: geometryEqual,
-        };
-      }
-      response.appendResponseLine(
-        `Computed styles diff vs snapshot "${baselineLabel}" ` +
-          `(snapshot -> current):`,
-      );
-      response.appendResponseLine('```json');
-      response.appendResponseLine(JSON.stringify(out));
-      response.appendResponseLine('```');
-    } finally {
-      await handle.dispose();
+    let geometryEqual: boolean | undefined;
+    if (request.params.compareGeometry) {
+      geometryEqual = borderRectsMatch(baseline.borderRect, currentRect);
     }
+
+    const classification = classifyStyleDiff(changed, geometryEqual);
+    const meta = snapshotMeta(snapshot);
+    const baselineLabel =
+      request.params.baselineFilePath ?? request.params.name ?? 'snapshot';
+    const out: Record<string, unknown> = {
+      snapshotMeta: meta,
+      domPathBaseline: baseline.domPath,
+      styleChanges: changed,
+      overlay: {borderQuad: liveQuad},
+      ...classification,
+    };
+    if (request.params.compareGeometry) {
+      out.geometry = {
+        baselineBorderRect: baseline.borderRect,
+        currentBorderRect: currentRect,
+        approximatelyEqual: geometryEqual,
+      };
+    }
+    appendJson(
+      response,
+      `Computed styles diff vs snapshot "${baselineLabel}" ` +
+        `(snapshot -> current):`,
+      out,
+    );
   },
 });
 
@@ -1302,39 +975,25 @@ export const highlightElementsForStyles = definePageTool({
   },
   blockedByDialog: true,
   verifyFilesSchema: {},
-  handler: async (request, response, context) => {
-    const pptr = request.page.pptrPage;
-    await context.ensureDomDomainEnabledForPage(pptr);
-    // @ts-expect-error internal API
-    const client = pptr._client();
-    try {
-      await client.send('Overlay.enable');
-    } catch {
-      void 0;
-    }
+  handler: async (request, response) => {
+    const nodes = await request.page.getDomNodesForUids(request.params.uids);
     const regions = await Promise.all(
       request.params.uids.map(async uid => {
-        const handle = await request.page.getElementByUid(uid);
-        try {
-          const nodeId = await context.getNodeIdFromHandle(handle, pptr);
-          const flat = borderQuadToNumbers(
-            (await client.send('DOM.getBoxModel', {nodeId})).model?.border,
+        const node = nodes.get(uid);
+        if (!node) {
+          throw new Error(
+            `Element with uid "${uid}" was detached or no longer exists on the page.`,
           );
-          const quad = flat ? [...flat] : null;
-          if (quad) {
-            await client
-              .send('Overlay.highlightQuad', {quad})
-              .catch(() => undefined);
-          }
-          return {uid, borderQuad: quad};
-        } finally {
-          await handle.dispose();
         }
+        const box = await node.boxModel();
+        return {uid, node, borderQuad: box?.border ?? null};
       }),
     );
-    response.appendResponseLine('Highlight regions (border quads, layout px):');
-    response.appendResponseLine('```json');
-    response.appendResponseLine(JSON.stringify({regions}));
-    response.appendResponseLine('```');
+    for (const region of regions) {
+      region.node.highlight('all');
+    }
+    appendJson(response, 'Highlight regions (border quads, layout px):', {
+      regions: regions.map(({uid, borderQuad}) => ({uid, borderQuad})),
+    });
   },
 });

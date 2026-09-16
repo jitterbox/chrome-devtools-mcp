@@ -152,6 +152,96 @@ export const commands: Commands = {
       },
     },
   },
+  diff_computed_styles: {
+    description:
+      'Side-by-side style diff for two uids on the same page; optional geometry compare for layout-affecting changes.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uidA: {
+        name: 'uidA',
+        type: 'string',
+        description: 'First element uid',
+        required: true,
+      },
+      uidB: {
+        name: 'uidB',
+        type: 'string',
+        description: 'Second element uid',
+        required: true,
+      },
+      properties: {
+        name: 'properties',
+        type: 'array',
+        description: 'Optional filter list',
+        required: false,
+      },
+      compareGeometry: {
+        name: 'compareGeometry',
+        type: 'boolean',
+        description:
+          'If true, compare border-box geometry and classify effective layout change.',
+        required: false,
+      },
+    },
+  },
+  diff_computed_styles_snapshot: {
+    description:
+      'Compare live uid to an in-memory snapshot (name) or JSON baseline (baselineFilePath); domPath when uids differ between loads.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      name: {
+        name: 'name',
+        type: 'string',
+        description: 'In-memory snapshot name',
+        required: false,
+      },
+      baselineFilePath: {
+        name: 'baselineFilePath',
+        type: 'string',
+        description:
+          'JSON baseline from save_computed_styles_snapshot filePath.',
+        required: false,
+      },
+      uid: {
+        name: 'uid',
+        type: 'string',
+        description: 'Element uid for the live node (from current snapshot)',
+        required: true,
+      },
+      domPath: {
+        name: 'domPath',
+        type: 'string',
+        description:
+          'If baseline uid differs, match saved element by domPath from v1 snapshot.',
+        required: false,
+      },
+      properties: {
+        name: 'properties',
+        type: 'array',
+        description: 'Optional filter list',
+        required: false,
+      },
+      compareGeometry: {
+        name: 'compareGeometry',
+        type: 'boolean',
+        description:
+          'Compare border-box rects to detect effective layout change.',
+        required: false,
+      },
+    },
+  },
   drag: {
     description: 'Drag an element onto another element',
     category: 'Input automation',
@@ -381,6 +471,85 @@ export const commands: Commands = {
         type: 'boolean',
         description:
           'Whether to include a snapshot in the response. Default is false.',
+        required: false,
+      },
+    },
+  },
+  get_box_model: {
+    description:
+      'CDP box model quads and rects for layout misalignment, overflow, and offset debugging.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uid: {
+        name: 'uid',
+        type: 'string',
+        description:
+          'The uid of an element on the page from the page content snapshot',
+        required: true,
+      },
+    },
+  },
+  get_computed_styles: {
+    description:
+      'Resolved computed styles for one uid; optional property filter and cascade-accurate winning declarations (includeSources). Prefer over scraping styles in evaluate_script.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uid: {
+        name: 'uid',
+        type: 'string',
+        description:
+          'The uid of an element on the page from the page content snapshot',
+        required: true,
+      },
+      properties: {
+        name: 'properties',
+        type: 'array',
+        description: 'Optional filter list',
+        required: false,
+      },
+      includeSources: {
+        name: 'includeSources',
+        type: 'boolean',
+        description:
+          'If true, include cascade-accurate winning declaration origins',
+        required: false,
+      },
+    },
+  },
+  get_computed_styles_batch: {
+    description:
+      'Batch computed styles map keyed by uid—use for design tokens or multi-node parity checks.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uids: {
+        name: 'uids',
+        type: 'array',
+        description:
+          'The uids of elements on the page from the page content snapshot',
+        required: true,
+      },
+      properties: {
+        name: 'properties',
+        type: 'array',
+        description: 'Optional filter list',
         required: false,
       },
     },
@@ -783,6 +952,26 @@ export const commands: Commands = {
       },
     },
   },
+  get_visibility: {
+    description:
+      'Explain why an element is invisible (display, opacity, zero size, off-viewport, clip-path).',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uid: {
+        name: 'uid',
+        type: 'string',
+        description:
+          'The uid of an element on the page from the page content snapshot',
+        required: true,
+      },
+    },
+  },
   handle_dialog: {
     description:
       'If a browser dialog was opened, use this command to handle it',
@@ -806,6 +995,25 @@ export const commands: Commands = {
         type: 'string',
         description: 'Optional prompt text to enter into the dialog.',
         required: false,
+      },
+    },
+  },
+  highlight_elements_for_styles: {
+    description:
+      'Highlight border quads in DevTools and return coordinates for screenshot overlays or docs.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      uids: {
+        name: 'uids',
+        type: 'array',
+        description: 'Element uids from the current page snapshot',
+        required: true,
       },
     },
   },
@@ -1377,6 +1585,45 @@ export const commands: Commands = {
         type: 'number',
         description: 'Page height',
         required: true,
+      },
+    },
+  },
+  save_computed_styles_snapshot: {
+    description:
+      'Store baseline computed styles + domPath/meta under a name and/or write schema v1 JSON to filePath for cross-run regression checks.',
+    category: 'Debugging',
+    args: {
+      pageId: {
+        name: 'pageId',
+        type: 'number',
+        description: 'Targets a specific page by ID.',
+        required: true,
+      },
+      name: {
+        name: 'name',
+        type: 'string',
+        description: 'In-memory snapshot name',
+        required: false,
+      },
+      uids: {
+        name: 'uids',
+        type: 'array',
+        description:
+          'The uids of elements on the page from the page content snapshot',
+        required: true,
+      },
+      properties: {
+        name: 'properties',
+        type: 'array',
+        description: 'Optional filter list',
+        required: false,
+      },
+      filePath: {
+        name: 'filePath',
+        type: 'string',
+        description:
+          'Absolute or cwd-relative path to read/write a JSON styles snapshot file.',
+        required: false,
       },
     },
   },

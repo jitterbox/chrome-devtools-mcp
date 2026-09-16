@@ -31,6 +31,8 @@ async function spawnServer(): Promise<Server> {
       '--isolated',
       '--executable-path',
       await executablePath(),
+      '--chrome-arg=--no-sandbox',
+      '--chrome-arg=--disable-setuid-sandbox',
     ],
     {
       env: {

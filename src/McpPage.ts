@@ -85,13 +85,17 @@ import {takeSnapshot} from './tools/snapshot.js';
 import type {ToolGroups} from './tools/thirdPartyDeveloper.js';
 const DEFAULT_TIMEOUT = 5_000;
 const NAVIGATION_TIMEOUT = 10_000;
+import {CssFormatter, type CascadeRule} from './formatters/CssFormatter.js';
 import type {
   ContextPage,
   DevToolsData,
   MatchedStyles,
   Response,
+  StyleInspection,
+  StyleInspectionOptions,
 } from './tools/ToolDefinition.js';
 import type {
+  ActiveCssDeclaration,
   EmulationSettings,
   GeolocationOptions,
   TextSnapshotNode,
@@ -108,6 +112,16 @@ function isBackendNodeId(
   id: unknown,
 ): id is DevTools.Protocol.DOM.BackendNodeId {
   return typeof id === 'number';
+}
+
+function activeDeclarationSource(rule: CascadeRule): string {
+  if (rule.type === 'inline') {
+    return 'inline';
+  }
+  if (rule.type === 'attributes') {
+    return 'attributes';
+  }
+  return 'rule';
 }
 
 /**
@@ -755,7 +769,9 @@ export class McpPage implements ContextPage {
     }
   }
 
-  async getMatchedStylesForUid(uid: string): Promise<MatchedStyles> {
+  async #backendNodeIdForUid(
+    uid: string,
+  ): Promise<DevTools.Protocol.DOM.BackendNodeId> {
     if (!this.textSnapshot) {
       throw new Error(
         `No snapshot found for page ${this.id ?? '?'}. Use ${takeSnapshot.name} to capture one.`,
@@ -765,12 +781,46 @@ export class McpPage implements ContextPage {
     if (!node) {
       throw new Error(`Element uid "${uid}" not found on page ${this.id}.`);
     }
+    if (isBackendNodeId(node.backendNodeId)) {
+      return node.backendNodeId;
+    }
+    let handle: ElementHandle<Element> | undefined;
+    try {
+      handle = await this.#resolveElementHandle(node, uid);
+      const backendNodeId = await handle.backendNodeId();
+      if (isBackendNodeId(backendNodeId)) {
+        return backendNodeId;
+      }
+    } catch {
+      // Fall through to the shared resolution error.
+    } finally {
+      await handle?.dispose();
+    }
+    throw new Error(
+      `Failed to resolve backend node ID for element with uid "${uid}".`,
+    );
+  }
 
-    const backendNodeId = node.backendNodeId;
-    if (!isBackendNodeId(backendNodeId)) {
+  async getDomNodesForUids(
+    uids: string[],
+  ): Promise<Map<string, DevTools.DOMModel.DOMNode>> {
+    if (uids.length === 0) {
+      return new Map();
+    }
+    if (!this.textSnapshot) {
       throw new Error(
-        `Failed to resolve backend node ID for element with uid "${uid}".`,
+        `No snapshot found for page ${this.id ?? '?'}. Use ${takeSnapshot.name} to capture one.`,
       );
+    }
+
+    const uidToBackend = new Map<string, DevTools.Protocol.DOM.BackendNodeId>();
+    const resolved = await Promise.all(
+      uids.map(
+        async uid => [uid, await this.#backendNodeIdForUid(uid)] as const,
+      ),
+    );
+    for (const [uid, backendId] of resolved) {
+      uidToBackend.set(uid, backendId);
     }
 
     if (!this.#devtoolsUniverse) {
@@ -779,44 +829,206 @@ export class McpPage implements ContextPage {
       );
     }
 
+    const backendToNode = new Map<
+      DevTools.Protocol.DOM.BackendNodeId,
+      DevTools.DOMModel.DOMNode
+    >();
     const targetManager = this.#devtoolsUniverse.universe.context.get(
       DevTools.TargetManager,
     );
-    let domNode: DevTools.DOMModel.DOMNode | undefined;
-    let cssModel: DevTools.CSSModel.CSSModel | null = null;
 
     for (const dom of targetManager.models(DevTools.DOMModel.DOMModel)) {
-      const nodeMap = await dom.pushNodesByBackendIdsToFrontend(
-        new Set([backendNodeId]),
-      );
-      const frontendNode = nodeMap?.get(backendNodeId);
-      if (frontendNode) {
-        domNode = frontendNode;
-        cssModel = dom.target().model(DevTools.CSSModel.CSSModel);
+      const remaining = new Set<DevTools.Protocol.DOM.BackendNodeId>();
+      for (const backendId of uidToBackend.values()) {
+        if (!backendToNode.has(backendId)) {
+          remaining.add(backendId);
+        }
+      }
+      if (remaining.size === 0) {
         break;
+      }
+      const nodeMap = await dom.pushNodesByBackendIdsToFrontend(remaining);
+      if (!nodeMap) {
+        continue;
+      }
+      for (const [backendId, frontendNode] of nodeMap) {
+        if (frontendNode) {
+          backendToNode.set(backendId, frontendNode);
+        }
       }
     }
 
-    if (!domNode || !cssModel) {
+    const result = new Map<string, DevTools.DOMModel.DOMNode>();
+    for (const uid of uids) {
+      const backendId = uidToBackend.get(uid);
+      if (!isBackendNodeId(backendId)) {
+        throw new Error(
+          `Failed to resolve backend node ID for element with uid "${uid}".`,
+        );
+      }
+      const resolved = backendToNode.get(backendId);
+      if (!resolved) {
+        throw new Error(
+          `Element with uid "${uid}" was detached or no longer exists on the page. Please take a new snapshot with ${takeSnapshot.name}.`,
+        );
+      }
+      const domNode = resolved.enclosingElementOrSelf();
+      if (!domNode) {
+        throw new Error(
+          `Element with uid "${uid}" is not an element node and has no parent element.`,
+        );
+      }
+      result.set(uid, domNode);
+    }
+    return result;
+  }
+
+  async getDomNodeForUid(uid: string): Promise<DevTools.DOMModel.DOMNode> {
+    const nodes = await this.getDomNodesForUids([uid]);
+    const node = nodes.get(uid);
+    if (!node) {
       throw new Error(
         `Element with uid "${uid}" was detached or no longer exists on the page. Please take a new snapshot with ${takeSnapshot.name}.`,
       );
     }
+    return node;
+  }
 
-    const targetElement = domNode.enclosingElementOrSelf();
-    if (!targetElement) {
+  async getStyleInspectionForUids(
+    uids: string[],
+    options: StyleInspectionOptions = {},
+  ): Promise<Map<string, StyleInspection>> {
+    const nodes = await this.getDomNodesForUids(uids);
+    const result = new Map<string, StyleInspection>();
+    await Promise.all(
+      [...nodes].map(async ([uid, node]) => {
+        const computed = await node
+          .domModel()
+          .cssModel()
+          .getComputedStyle(node.id);
+        if (!computed) {
+          throw new Error(
+            `Could not retrieve computed styles for element with uid "${uid}".`,
+          );
+        }
+        const wantSources =
+          options.sources === true || Array.isArray(options.sources);
+        const sourceProps = Array.isArray(options.sources)
+          ? options.sources
+          : undefined;
+        const [box, sources] = await Promise.all([
+          options.box ? node.boxModel() : Promise.resolve(undefined),
+          wantSources
+            ? this.#activeDeclarationsForNode(node, uid, sourceProps)
+            : Promise.resolve(undefined),
+        ]);
+        const inspection: StyleInspection = {
+          computed,
+          backendNodeId: node.backendNodeId(),
+        };
+        if (options.box) {
+          inspection.box = box ?? null;
+        }
+        if (sources) {
+          inspection.sources = sources;
+        }
+        result.set(uid, inspection);
+      }),
+    );
+    return result;
+  }
+
+  async getComputedStylesForUids(
+    uids: string[],
+  ): Promise<Map<string, Map<string, string>>> {
+    const inspected = await this.getStyleInspectionForUids(uids);
+    const result = new Map<string, Map<string, string>>();
+    for (const [uid, data] of inspected) {
+      result.set(uid, data.computed);
+    }
+    return result;
+  }
+
+  async getComputedStylesForUid(uid: string): Promise<Map<string, string>> {
+    const styles = (await this.getComputedStylesForUids([uid])).get(uid);
+    if (!styles) {
       throw new Error(
-        `Element with uid "${uid}" is not an element node and has no parent element.`,
+        `Could not retrieve computed styles for element with uid "${uid}".`,
       );
     }
+    return styles;
+  }
 
-    const matchedStyles = await cssModel.getMatchedStyles(targetElement.id);
+  async getBoxModelForUid(uid: string): Promise<Protocol.DOM.BoxModel | null> {
+    const node = await this.getDomNodeForUid(uid);
+    return node.boxModel();
+  }
+
+  async getActiveDeclarationsForUid(
+    uid: string,
+    properties?: string[],
+  ): Promise<Record<string, ActiveCssDeclaration>> {
+    const node = await this.getDomNodeForUid(uid);
+    return this.#activeDeclarationsForNode(node, uid, properties);
+  }
+
+  async #activeDeclarationsForNode(
+    node: DevTools.DOMModel.DOMNode,
+    uid: string,
+    properties?: string[],
+  ): Promise<Record<string, ActiveCssDeclaration>> {
+    const matchedStyles = await node
+      .domModel()
+      .cssModel()
+      .cachedMatchedCascadeForNode(node);
     if (!matchedStyles) {
       throw new Error(
         `Could not retrieve matched styles for element with uid "${uid}".`,
       );
     }
 
+    const requested = properties?.length ? new Set(properties) : undefined;
+    const declarations: Record<string, ActiveCssDeclaration> = {};
+    for (const rule of CssFormatter.collectNodeRules(matchedStyles, {uid})) {
+      const selector = 'selector' in rule ? rule.selector : undefined;
+      const origin = 'source' in rule ? rule.source : undefined;
+      for (const prop of rule.properties) {
+        if (prop.status !== 'active') {
+          continue;
+        }
+        if (requested && !requested.has(prop.name)) {
+          continue;
+        }
+        if (prop.name in declarations) {
+          continue;
+        }
+        declarations[prop.name] = {
+          source: activeDeclarationSource(rule),
+          ...(selector ? {selector} : {}),
+          ...(origin ? {origin} : {}),
+          value: prop.value,
+        };
+      }
+    }
+    return declarations;
+  }
+
+  async highlightUid(uid: string): Promise<void> {
+    const node = await this.getDomNodeForUid(uid);
+    node.highlight('all');
+  }
+
+  async getMatchedStylesForUid(uid: string): Promise<MatchedStyles> {
+    const node = await this.getDomNodeForUid(uid);
+    const matchedStyles = await node
+      .domModel()
+      .cssModel()
+      .getMatchedStyles(node.id);
+    if (!matchedStyles) {
+      throw new Error(
+        `Could not retrieve matched styles for element with uid "${uid}".`,
+      );
+    }
     return matchedStyles;
   }
 

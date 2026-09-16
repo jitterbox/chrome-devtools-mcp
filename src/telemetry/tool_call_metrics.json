@@ -1066,5 +1066,115 @@
         "argType": "number"
       }
     ]
+  },
+  {
+    "name": "diff_computed_styles",
+    "args": [
+      {
+        "name": "uid_a_length",
+        "argType": "number"
+      },
+      {
+        "name": "uid_b_length",
+        "argType": "number"
+      },
+      {
+        "name": "properties_count",
+        "argType": "number"
+      },
+      {
+        "name": "compare_geometry",
+        "argType": "boolean"
+      }
+    ]
+  },
+  {
+    "name": "diff_computed_styles_snapshot",
+    "args": [
+      {
+        "name": "name_length",
+        "argType": "number"
+      },
+      {
+        "name": "baseline_file_path_length",
+        "argType": "number"
+      },
+      {
+        "name": "dom_path_length",
+        "argType": "number"
+      },
+      {
+        "name": "properties_count",
+        "argType": "number"
+      },
+      {
+        "name": "compare_geometry",
+        "argType": "boolean"
+      }
+    ]
+  },
+  {
+    "name": "get_box_model",
+    "args": []
+  },
+  {
+    "name": "get_computed_styles",
+    "args": [
+      {
+        "name": "properties_count",
+        "argType": "number"
+      },
+      {
+        "name": "include_sources",
+        "argType": "boolean"
+      }
+    ]
+  },
+  {
+    "name": "get_computed_styles_batch",
+    "args": [
+      {
+        "name": "uids_count",
+        "argType": "number"
+      },
+      {
+        "name": "properties_count",
+        "argType": "number"
+      }
+    ]
+  },
+  {
+    "name": "get_visibility",
+    "args": []
+  },
+  {
+    "name": "highlight_elements_for_styles",
+    "args": [
+      {
+        "name": "uids_count",
+        "argType": "number"
+      }
+    ]
+  },
+  {
+    "name": "save_computed_styles_snapshot",
+    "args": [
+      {
+        "name": "name_length",
+        "argType": "number"
+      },
+      {
+        "name": "uids_count",
+        "argType": "number"
+      },
+      {
+        "name": "properties_count",
+        "argType": "number"
+      },
+      {
+        "name": "file_path_length",
+        "argType": "number"
+      }
+    ]
   }
 ]

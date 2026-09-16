@@ -22,6 +22,8 @@ import type {Browser} from '../src/third_party/index.js';
 
 import {serverHooks} from './server.js';
 
+const TEST_CHROME_ARGS = ['--no-sandbox', '--disable-setuid-sandbox'];
+
 async function safeClose(browser: Browser) {
   try {
     await Promise.race([
@@ -125,6 +127,7 @@ describe('browser', () => {
         userDataDir: folderPath,
         executablePath: await executablePath(),
         devtools: false,
+        chromeArgs: TEST_CHROME_ARGS,
       });
       try {
         try {
@@ -134,6 +137,7 @@ describe('browser', () => {
             userDataDir: folderPath,
             executablePath: await executablePath(),
             devtools: false,
+            chromeArgs: TEST_CHROME_ARGS,
           });
           await safeClose(browser2);
           assert.fail('not reached');
@@ -166,6 +170,7 @@ describe('browser', () => {
           height: 801,
         },
         devtools: false,
+        chromeArgs: TEST_CHROME_ARGS,
       });
       try {
         const [page] = await browser.pages();
@@ -195,7 +200,7 @@ describe('browser', () => {
         userDataDir: folderPath,
         executablePath: await executablePath(),
         devtools: false,
-        chromeArgs: ['--remote-debugging-port=0'],
+        chromeArgs: [...TEST_CHROME_ARGS, '--remote-debugging-port=0'],
       });
       try {
         const connectedBrowser = await ensureBrowserConnected({
@@ -231,6 +236,7 @@ describe('browser', () => {
           executablePath: await executablePath(),
           devtools: false,
           blocklist: ['*://*:*/blocked.html'],
+          chromeArgs: TEST_CHROME_ARGS,
         });
         try {
           const page = await browser.newPage();
@@ -274,6 +280,7 @@ describe('browser', () => {
           executablePath: await executablePath(),
           devtools: false,
           allowlist: ['*://*:*/allowed.html'],
+          chromeArgs: TEST_CHROME_ARGS,
         });
         try {
           const page = await browser.newPage();

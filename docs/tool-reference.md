@@ -441,13 +441,13 @@
 
 ### `get_computed_styles`
 
-**Description:** Resolved computed styles for one uid; optional property filter and winning-rule hints (includeSources). Prefer over scraping styles in [`evaluate_script`](#evaluate_script).
+**Description:** Resolved computed styles for one uid; optional property filter and cascade-accurate winning declarations (includeSources). Prefer over scraping styles in [`evaluate_script`](#evaluate_script).
 
 **Parameters:**
 
 - **pageId** (number) **(required)**: Targets a specific page by ID.
 - **uid** (string) **(required)**: The uid of an element on the page from the page content snapshot
-- **includeSources** (boolean) _(optional)_: If true, include best-effort winning rule origins
+- **includeSources** (boolean) _(optional)_: If true, include cascade-accurate winning declaration origins
 - **properties** (array) _(optional)_: Optional filter list
 
 ---

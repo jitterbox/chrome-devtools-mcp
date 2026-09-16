@@ -42,6 +42,8 @@ describe('e2e', () => {
           '--isolated',
           '--executable-path',
           await executablePath(),
+          '--chrome-arg=--no-sandbox',
+          '--chrome-arg=--disable-setuid-sandbox',
           ...extraArgs,
         ],
         env: {...process.env, CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: 'true'},

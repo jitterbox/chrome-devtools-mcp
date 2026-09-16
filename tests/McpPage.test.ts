@@ -801,6 +801,42 @@ describe('McpPage', () => {
       );
     });
 
+    it('shares snapshot errors across the DevTools style helpers', async () => {
+      const {mcpPage} = createMcpPage();
+      await assert.rejects(
+        () => mcpPage.getComputedStylesForUid('1_1'),
+        /No snapshot found for page/,
+      );
+      await assert.rejects(
+        () => mcpPage.getBoxModelForUid('1_1'),
+        /No snapshot found for page/,
+      );
+      await assert.rejects(
+        () => mcpPage.highlightUid('1_1'),
+        /No snapshot found for page/,
+      );
+      await assert.rejects(
+        () => mcpPage.getActiveDeclarationsForUid('1_1'),
+        /No snapshot found for page/,
+      );
+      await assert.rejects(
+        () => mcpPage.getDomNodesForUids(['1_1']),
+        /No snapshot found for page/,
+      );
+      await assert.rejects(
+        () => mcpPage.getStyleInspectionForUids(['1_1']),
+        /No snapshot found for page/,
+      );
+    });
+
+    it('returns an empty map for an empty uid list', async () => {
+      const {mcpPage} = createMcpPage();
+      const nodes = await mcpPage.getDomNodesForUids([]);
+      assert.strictEqual(nodes.size, 0);
+      const inspected = await mcpPage.getStyleInspectionForUids([]);
+      assert.strictEqual(inspected.size, 0);
+    });
+
     it('retrieves matched styles across elements, shadow roots, and iframes', async () => {
       server.addHtmlRoute(
         '/iframe_content.html',
@@ -917,6 +953,151 @@ describe('McpPage', () => {
           const selectors = await getSelectorsForUid(uid, mcpPage);
           assert.ok(selectors.includes('.frame-btn'));
         }
+      });
+    });
+  });
+
+  describe('DevTools style helpers', () => {
+    const server = serverHooks();
+
+    afterEach(() => {
+      sinon.restore();
+    });
+
+    it('resolves nodes, computed styles, box model, and active declarations', async () => {
+      server.addHtmlRoute(
+        '/iframe_content.html',
+        html`
+          <style>
+            .frame-btn {
+              background-color: purple;
+              color: white;
+            }
+          </style>
+          <button
+            id="iframe-btn"
+            class="frame-btn"
+            >Iframe Button</button
+          >
+        `,
+      );
+      server.addHtmlRoute(
+        '/style_helpers.html',
+        html`
+          <style>
+            .btn-primary {
+              color: blue;
+              font-size: 14px;
+            }
+            #my-button {
+              color: green;
+            }
+          </style>
+          <button
+            id="my-button"
+            class="btn-primary"
+            style="font-size: 16px; padding: 8px;"
+          >
+            Click Me
+          </button>
+          <div id="open-host"></div>
+          <iframe
+            id="child-frame"
+            src="/iframe_content.html"
+          ></iframe>
+          <script>
+            const openHost = document.getElementById('open-host');
+            const openRoot = openHost.attachShadow({mode: 'open'});
+            openRoot.innerHTML = \`
+              <style>
+                .shadow-btn-open {
+                  color: rgb(100, 200, 50);
+                }
+              </style>
+              <button class="shadow-btn-open">Open Shadow Button</button>
+            \`;
+          </script>
+        `,
+      );
+
+      await withMcpContext(async (_, context) => {
+        const mcpPage = context.getSelectedMcpPage();
+        await mcpPage.pptrPage.goto(server.getRoute('/style_helpers.html'));
+        const frame = await mcpPage.pptrPage.waitForFrame(
+          f => f.url() === server.getRoute('/iframe_content.html'),
+        );
+        if (!frame) {
+          throw new Error('Child frame not found');
+        }
+        await frame.waitForSelector('#iframe-btn');
+        mcpPage.textSnapshot = await TextSnapshot.create(mcpPage);
+
+        const buttonUid = getUidForNode(mcpPage, 'Click Me');
+        const shadowUid = getUidForNode(mcpPage, 'Open Shadow Button');
+        const iframeUid = getUidForNode(mcpPage, 'Iframe Button');
+
+        const nodes = await mcpPage.getDomNodesForUids([
+          buttonUid,
+          shadowUid,
+          iframeUid,
+        ]);
+        assert.ok(nodes.get(buttonUid));
+        assert.ok(nodes.get(shadowUid));
+        assert.ok(nodes.get(iframeUid));
+
+        const computed = await mcpPage.getComputedStylesForUid(buttonUid);
+        assert.strictEqual(computed.get('color'), 'rgb(0, 128, 0)');
+        assert.strictEqual(computed.get('font-size'), '16px');
+
+        const inspected = await mcpPage.getStyleInspectionForUids([buttonUid], {
+          box: true,
+          sources: ['color', 'font-size'],
+        });
+        const details = inspected.get(buttonUid);
+        assert.ok(details);
+        assert.strictEqual(details.computed.get('color'), 'rgb(0, 128, 0)');
+        assert.ok(details.box);
+        assert.ok(details.box.width > 0);
+        assert.strictEqual(details.sources?.['font-size']?.source, 'inline');
+        assert.strictEqual(details.sources?.['color']?.source, 'rule');
+
+        const box = await mcpPage.getBoxModelForUid(buttonUid);
+        assert.ok(box);
+        assert.ok(box.width > 0);
+        assert.ok(box.border.length >= 8);
+
+        const active = await mcpPage.getActiveDeclarationsForUid(buttonUid, [
+          'color',
+          'font-size',
+        ]);
+        assert.strictEqual(active['font-size']?.source, 'inline');
+        assert.strictEqual(active['color']?.source, 'rule');
+
+        const shadowStyles = await mcpPage.getComputedStylesForUid(shadowUid);
+        assert.strictEqual(shadowStyles.get('color'), 'rgb(100, 200, 50)');
+
+        const iframeStyles = await mcpPage.getComputedStylesForUid(iframeUid);
+        assert.strictEqual(iframeStyles.get('color'), 'rgb(255, 255, 255)');
+
+        const batch = await mcpPage.getComputedStylesForUids([
+          buttonUid,
+          shadowUid,
+        ]);
+        assert.strictEqual(
+          batch.get(buttonUid)?.get('color'),
+          'rgb(0, 128, 0)',
+        );
+        assert.strictEqual(
+          batch.get(shadowUid)?.get('color'),
+          'rgb(100, 200, 50)',
+        );
+
+        await mcpPage.highlightUid(buttonUid);
+
+        const unfiltered = await mcpPage.getActiveDeclarationsForUid(buttonUid);
+        assert.ok(unfiltered['font-size']);
+        assert.ok(unfiltered['color']);
+        assert.strictEqual(unfiltered['font-size']?.source, 'inline');
       });
     });
   });

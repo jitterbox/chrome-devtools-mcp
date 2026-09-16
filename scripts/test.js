@@ -93,7 +93,6 @@ async function runTests(attempt) {
         CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: true,
         CHROME_DEVTOOLS_MCP_CRASH_ON_UNCAUGHT: true,
         CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: true,
-        CHROME_DEVTOOLS_MCP_TEST_NO_SANDBOX: true,
         ...(process.env['RUNNER_DEBUG'] === '1'
           ? {NODE_DEBUG: 'puppeteer:*'}
           : {}),

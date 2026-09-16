@@ -37,8 +37,10 @@ import type {
   GeolocationOptions,
   ExtensionServiceWorker,
   CD4ACommentThread,
+  NamedStyleSnapshot,
+  ActiveCssDeclaration,
+  PaginationOptions,
 } from '../types.js';
-import type {PaginationOptions} from '../types.js';
 import type {
   WaitForEventsResult,
   DialogAction,
@@ -46,6 +48,18 @@ import type {
 
 import type {ToolCategory} from './categories.js';
 import type {ToolGroups} from './thirdPartyDeveloper.js';
+
+export interface StyleInspection {
+  computed: Map<string, string>;
+  box?: Protocol.DOM.BoxModel | null;
+  sources?: Record<string, ActiveCssDeclaration>;
+  backendNodeId?: number;
+}
+
+export interface StyleInspectionOptions {
+  box?: boolean;
+  sources?: boolean | string[];
+}
 
 export type FileVerificationOption =
   | true
@@ -327,12 +341,8 @@ export type Context = Readonly<{
     filePath: string,
     options: HeapQueryOptions,
   ): Promise<DevTools.HeapSnapshotModel.HeapSnapshotModel.ItemsRange>;
-  getNodeIdFromHandle(
-    handle: ElementHandle<Element>,
-    page: Page,
-  ): Promise<number>;
-  ensureCssDomainEnabledForPage(page: Page): Promise<void>;
-  ensureDomDomainEnabledForPage(page: Page): Promise<void>;
+  getStyleSnapshot(name: string): NamedStyleSnapshot | undefined;
+  setStyleSnapshot(name: string, snapshot: NamedStyleSnapshot): void;
 }>;
 
 export type MatchedStyles = DevTools.CSSMatchedStyles.CSSMatchedStyles;
@@ -347,6 +357,24 @@ export type ContextPage = Readonly<{
   getAXNodeByUid(uid: string): TextSnapshotNode | undefined;
   getElementByUid(uid: string): Promise<ElementHandle<Element>>;
   getMatchedStylesForUid(uid: string): Promise<MatchedStyles>;
+  getDomNodesForUids(
+    uids: string[],
+  ): Promise<Map<string, DevTools.DOMModel.DOMNode>>;
+  getDomNodeForUid(uid: string): Promise<DevTools.DOMModel.DOMNode>;
+  getComputedStylesForUid(uid: string): Promise<Map<string, string>>;
+  getComputedStylesForUids(
+    uids: string[],
+  ): Promise<Map<string, Map<string, string>>>;
+  getBoxModelForUid(uid: string): Promise<Protocol.DOM.BoxModel | null>;
+  getStyleInspectionForUids(
+    uids: string[],
+    options?: StyleInspectionOptions,
+  ): Promise<Map<string, StyleInspection>>;
+  getActiveDeclarationsForUid(
+    uid: string,
+    properties?: string[],
+  ): Promise<Record<string, ActiveCssDeclaration>>;
+  highlightUid(uid: string): Promise<void>;
 
   /**
    * Returns a reqid for a cdpRequestId.
