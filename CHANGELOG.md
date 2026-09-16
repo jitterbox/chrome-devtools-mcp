@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.1](https://github.com/jitterbox/chrome-devtools-mcp/compare/chrome-devtools-mcp-v1.9.0...chrome-devtools-mcp-v1.9.1) (2026-09-16)
+
+Fork release on upstream `1.9.0`.
+
+### 🎉 Features
+
+* Port fork style tools onto DevTools CSS/DOM models
+* Emit style tool results via `setStyleResult` for `structuredContent` and compact encodings
+
+
 ## [1.9.0](https://github.com/ChromeDevTools/chrome-devtools-mcp/compare/chrome-devtools-mcp-v1.8.0...chrome-devtools-mcp-v1.9.0) (2026-09-08)
 
 
