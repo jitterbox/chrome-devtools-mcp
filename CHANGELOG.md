@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.2](https://github.com/jitterbox/chrome-devtools-mcp/compare/chrome-devtools-mcp-v1.9.1...chrome-devtools-mcp-v1.9.2) (2026-09-16)
+
+### 📄 Documentation
+
+* Showcase fork-only style tools in the README
+
+
 ## [1.9.1](https://github.com/jitterbox/chrome-devtools-mcp/compare/chrome-devtools-mcp-v1.9.0...chrome-devtools-mcp-v1.9.1) (2026-09-16)
 
 Fork release on upstream `1.9.0`.
